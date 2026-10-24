@@ -104,6 +104,62 @@ class CategoryAdminTest(MirrorTestCase):
         self.assertFalse(BlogCategory.objects.filter(id=98).exists())
 
 
+class CategoryI18nTest(MirrorTestCase):
+    """Per-language display names (name_en/name_de/name_es): the admin form
+    edits them and the values round-trip to the shared table the FastAPI app
+    reads for localized category labels."""
+
+    databases = {"default", "admin_auth"}
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.superuser = get_user_model().objects.create_superuser(
+            username="boss", password="boss-pass-123", email="boss@x.com"
+        )
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.superuser)
+        BlogCategory.objects.all().delete()
+        call_command("seed_categories")
+
+    def test_change_form_exposes_language_fields(self):
+        cat = BlogCategory.objects.get(id=22)
+        resp = self.client.get(
+            reverse("admin:panel_blogcategory_change", args=[cat.pk])
+        )
+        self.assertEqual(resp.status_code, 200)
+        for field in ("name_en", "name_de", "name_es"):
+            self.assertContains(resp, f'name="{field}"')
+
+    def test_save_language_names_roundtrip(self):
+        cat = BlogCategory.objects.get(id=22)
+        url = reverse("admin:panel_blogcategory_change", args=[cat.pk])
+        resp = self.client.post(
+            url,
+            {"name": "KI", "slug": "ki",
+             "name_en": "AI", "name_de": "KI", "name_es": "IA"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        cat.refresh_from_db()
+        self.assertEqual(cat.name_en, "AI")
+        self.assertEqual(cat.name_de, "KI")
+        self.assertEqual(cat.name_es, "IA")
+
+    def test_language_names_optional(self):
+        # Leaving the language fields empty stores NULL (the app falls back
+        # to the base name) — they must not block saving.
+        cat = BlogCategory.objects.get(id=1)
+        url = reverse("admin:panel_blogcategory_change", args=[cat.pk])
+        resp = self.client.post(url, {"name": "General", "slug": "general"})
+        self.assertEqual(resp.status_code, 302)
+        cat.refresh_from_db()
+        self.assertIsNone(cat.name_en)
+        self.assertIsNone(cat.name_de)
+        self.assertIsNone(cat.name_es)
+
+
 class PostCategorySelectTest(MirrorTestCase):
     databases = {"default", "admin_auth"}
 

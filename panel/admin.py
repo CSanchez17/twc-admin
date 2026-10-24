@@ -344,8 +344,8 @@ class BlogCategoryAdmin(admin.ModelAdmin):
     and the FastAPI read path falls back to the legacy name / 'General'.
     """
 
-    list_display = ("id", "name", "slug", "created_at")
-    search_fields = ("name", "slug")
+    list_display = ("id", "name", "name_en", "name_de", "name_es", "slug", "created_at")
+    search_fields = ("name", "name_en", "name_de", "name_es", "slug")
     ordering = ("id",)
 
     def get_readonly_fields(self, request, obj=None):

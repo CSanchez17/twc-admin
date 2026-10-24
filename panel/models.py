@@ -111,6 +111,12 @@ class BlogCategory(models.Model):
 
     id = models.IntegerField(primary_key=True)
     name = models.CharField(max_length=120, unique=True)
+    # Per-language display names shown by the FastAPI app (the site resolves
+    # the visitor's language from Accept-Language). NULL = "not translated" →
+    # the app falls back to ``name``.
+    name_en = models.CharField(max_length=120, blank=True, null=True)
+    name_de = models.CharField(max_length=120, blank=True, null=True)
+    name_es = models.CharField(max_length=120, blank=True, null=True)
     slug = models.CharField(max_length=140, unique=True)
     created_at = models.DateTimeField()
 
