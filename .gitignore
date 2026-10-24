@@ -1,6 +1,7 @@
 # Panel-local secrets & env — never commit
 .venv/
 .admin_auth/
+staticfiles/
 .admin_auth.sqlite3
 .admin_auth.sqlite3-shm
 .admin_auth.sqlite3-wal

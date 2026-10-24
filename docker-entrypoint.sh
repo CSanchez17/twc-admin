@@ -9,4 +9,9 @@ set -e
 
 python manage.py migrate --noinput --database admin_auth
 
-exec "$@"
+# Serve the admin's own CSS/JS: collect into STATIC_ROOT so the
+# WhiteNoiseMiddleware can answer /static/... (gunicorn never serves
+# statics, and the admin catch-all would 404 them).
+python manage.py collectstatic --noinput --clear
+
+exec "$@" 

@@ -34,7 +34,11 @@ COPY --from=builder /wheels /wheels
 RUN pip install --no-cache-dir --no-index --find-links=/wheels /wheels/*.whl \
  && rm -rf /wheels
 COPY --chown=django:django . /app
-RUN chmod +x /app/docker-entrypoint.sh  && mkdir -p /data && chown django:django /data
+# /app itself stays root-owned after the COPY (chown only covers the
+# copied entries) — fix it so collectstatic can create /app/staticfiles.
+RUN chmod +x /app/docker-entrypoint.sh  \
+ && mkdir -p /data \
+ && chown django:django /app /data
 USER django
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

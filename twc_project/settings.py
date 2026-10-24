@@ -178,6 +178,12 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Serves /static/ from STATIC_ROOT (compressed + cached). gunicorn does
+    # not serve statics the way runserver does, and the admin's catch-all
+    # (admin.site.urls: re_path("(?P<url>.*)$")) would swallow every
+    # /static/... request as a 404 — so the statics must be answered before
+    # the view. Whitenoise is the standard small-app answer.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -211,6 +217,9 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+# collectstatic target (Docker entrypoint runs it on every boot; also
+# `python manage.py collectstatic` for host-side whitenoise usage).
+STATIC_ROOT = str(BASE_DIR / "staticfiles")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
