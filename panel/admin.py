@@ -368,6 +368,26 @@ class BlogCategoryAdmin(admin.ModelAdmin):
 # ── Comments ────────────────────────────────────────────────────────────────
 
 
+def _post_ref_cell(post_id, post=None):
+    """Post column for comment/reaction changelists: the title links to the
+    live post (new tab) and the /blog/<legacy_id> (or the slug for modern
+    posts) is shown next to it — a bare title is not enough to tell which
+    post a comment or reaction belongs to.
+
+    ``post`` is the select_related'd parent when available — the queryset
+    only runs when the FK is genuinely missing."""
+    if post is None:
+        post = BlogPost.objects.filter(id=post_id).first()
+    if post is None:
+        return escape(str(post_id))
+    ref = f"/blog/{post.legacy_id}" if post.legacy_id is not None else post.slug
+    return format_html(
+        '<a href="{}" target="_blank" rel="noopener noreferrer">{}</a> '
+        '<span class="muted">{}</span>',
+        ref, escape(post.title), escape(ref),
+    )
+
+
 @admin.register(BlogComment)
 class BlogCommentAdmin(admin.ModelAdmin):
     list_display = ("created_at", "post_title", "author", "is_approved", "excerpt")
@@ -391,7 +411,7 @@ class BlogCommentAdmin(admin.ModelAdmin):
         super().save_model(request, obj, form, change)
 
     def post_title(self, obj):
-        return escape(obj.post.title if obj.post else str(obj.post_id))
+        return _post_ref_cell(obj.post_id, obj.post)
 
     post_title.short_description = "Post"
 
@@ -589,7 +609,7 @@ class BlogReactionAdmin(_ReadOnlyMixin, admin.ModelAdmin):
         return super().get_queryset(request).select_related("post", "user")
 
     def post_title(self, obj):
-        return escape(obj.post.title if obj.post else str(obj.post_id))
+        return _post_ref_cell(obj.post_id, obj.post)
 
     post_title.short_description = "Post"
 

@@ -15,6 +15,8 @@ from django.test import TestCase
 from django.urls import reverse
 
 from panel.models import (
+    BlogComment,
+    BlogPost,
     BlogReaction,
     ChatRoom,
     ContactEmailSend,
@@ -181,3 +183,60 @@ class ContactMessageActionTest(SuperuserMixin, TestCase):
         self.assertEqual(resp.status_code, 302)
         msg.refresh_from_db()
         self.assertTrue(msg.is_resolved)
+
+
+class BlogCommentPostColumnTest(SuperuserMixin, TestCase):
+    """The changelist's Post column must make the referenced post
+    unambiguous: the title links to the live post AND the /blog/<id>
+    (legacy) or slug is shown next to it — a bare title is not enough to
+    tell which post a comment belongs to."""
+
+    def setUp(self):
+        super().setUp()
+        self.author = TWCUser.objects.create(
+            id=uuid.uuid4(), email="cp@x.com", username="cpostauthor",
+            password_hash="argon2id-smoke", given_name="C",
+            created_at="2026-10-24 10:00:00", updated_at="2026-10-24 10:00:00",
+        )
+        self.writer = TWCUser.objects.create(
+            id=uuid.uuid4(), email="cw@x.com", username="cwriter",
+            password_hash="argon2id-smoke", given_name="W",
+            created_at="2026-10-24 10:00:00", updated_at="2026-10-24 10:00:00",
+        )
+        self.legacy_post = BlogPost.objects.create(
+            id=uuid.uuid4(), legacy_id=9314, author_id=self.author.id,
+            title="The Facade Pattern Post", slug="/blog/the-facade-pattern",
+            content="{}", created_at="2026-10-24 10:00:00",
+            updated_at="2026-10-24 10:00:00",
+        )
+        self.modern_post = BlogPost.objects.create(
+            id=uuid.uuid4(), author_id=self.author.id,
+            title="Modern Post No Legacy Id", slug="/blog/modern-post-no-legacy",
+            content="{}", created_at="2026-10-24 10:00:00",
+            updated_at="2026-10-24 10:00:00",
+        )
+        BlogComment.objects.create(
+            id=uuid.uuid4(), post_id=self.legacy_post.id,
+            author_id=self.writer.id, content="<p>legacy comment</p>",
+            is_approved=True, created_at="2026-10-24 11:00:00",
+            updated_at="2026-10-24 11:00:00",
+        )
+        BlogComment.objects.create(
+            id=uuid.uuid4(), post_id=self.modern_post.id,
+            author_id=self.writer.id, content="<p>modern comment</p>",
+            is_approved=True, created_at="2026-10-24 11:05:00",
+            updated_at="2026-10-24 11:05:00",
+        )
+
+    def test_changelist_identifies_the_post_by_link_and_id(self):
+        resp = self.client.get(reverse("admin:panel_blogcomment_changelist"))
+        self.assertEqual(resp.status_code, 200)
+        html = resp.content.decode()
+        # legacy post: the title links to /blog/<legacy_id> and the numeric
+        # id is visible so the target is unambiguous
+        self.assertIn("The Facade Pattern Post", html)
+        self.assertIn('href="/blog/9314"', html)
+        self.assertIn("/blog/9314", html)
+        # modern post (no legacy id): falls back to the slug
+        self.assertIn("Modern Post No Legacy Id", html)
+        self.assertIn("/blog/modern-post-no-legacy", html)
