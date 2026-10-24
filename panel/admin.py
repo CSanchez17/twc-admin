@@ -84,6 +84,7 @@ class TWCUserAdminForm(forms.ModelForm):
             )
 
 
+@admin.register(TWCUser)
 class TWCUserAdmin(admin.ModelAdmin):
     form = TWCUserAdminForm
     list_display = ("username", "email", "role", "is_active", "is_email_confirmed", "created_at")

@@ -9,10 +9,10 @@ posts, categorías, tags y el resto del esquema.
 
 | Campo | Valor |
 |---|---|
-| URL | `http://127.0.0.1:8000/` |
+| URL | `http://127.0.0.1:8889/` |
 | Usuario | `twcadmin` |
 | Contraseña | `TwcAdmin2026!` |
-| Tags | `http://127.0.0.1:8000/tags/` |
+| Tags | `http://127.0.0.1:8889/tags/` |
 
 - Resetear: `.venv\Scripts\python.exe manage.py changepassword twcadmin`
 - El auth del panel vive en sqlite local (`.admin_auth.sqlite3`), separado de
@@ -33,7 +33,7 @@ cd C:\Projects\twc-admin
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
 .venv\Scripts\python.exe manage.py check
-.venv\Scripts\python.exe manage.py runserver
+.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8889
 ```
 
 Comandos útiles:

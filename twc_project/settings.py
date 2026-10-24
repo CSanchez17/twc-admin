@@ -68,8 +68,9 @@ _load_repo_env()
 
 def _normalize_for_host_access(url: str) -> str:
     """The panel runs on the HOST; the live app's config points at the
-    docker-internal hostname ``mysql``. Rewrite that to 127.0.0.1 (the
-    published 3306) so the same database is reachable from the host."""
+    docker-internal hostname ``mysql``. Rewrite that to 127.0.0.1 with the
+    PUBLISHED host port (compose maps mysql to 8801, not the internal 3306)
+    so the same database is reachable from the host."""
     parsed = urlparse(url)
     netloc = parsed.netloc
     if not netloc:
@@ -78,7 +79,10 @@ def _normalize_for_host_access(url: str) -> str:
     host, _, port = hostport.partition(":")
     if host in ("", "mysql"):
         host = "127.0.0.1"
-        new_hostport = f"{host}{(':' + port) if port else ''}"
+        # The compose file publishes the mysql container on 8801
+        # (``8801:3306``); from the host the internal 3306 is unreachable.
+        published = "8801"
+        new_hostport = f"{host}:{published}"
         new_netloc = (userinfo + "@" if userinfo else "") + new_hostport
         return urlunparse(parsed._replace(netloc=new_netloc))
     return url
