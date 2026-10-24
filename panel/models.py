@@ -69,7 +69,11 @@ class BlogPost(models.Model):
     featured_image = models.CharField(max_length=512, null=True, blank=True)
     tags = models.JSONField(null=True, blank=True)
     # The physical column is camelCase 'BlogCategoryInteger' in the shared DB.
-    blog_category_integer = models.IntegerField(null=True, db_column="BlogCategoryInteger")
+    # blank=True: the FastAPI app treats it as optional — and the admin form
+    # (built from the fieldsets) must not require it.
+    blog_category_integer = models.IntegerField(
+        null=True, blank=True, db_column="BlogCategoryInteger"
+    )
     created_at = models.DateTimeField()
     updated_at = models.DateTimeField()
 

@@ -20,7 +20,8 @@ import uuid
 from django import forms
 from django.contrib import admin
 from django.utils import timezone
-from django.utils.html import escape
+from django.utils.html import escape, format_html
+from django.utils.text import slugify
 
 from .models import (
     AnalyticsEvent,
@@ -201,12 +202,54 @@ class VisitAdmin(admin.ModelAdmin):
 # ── Blog posts ──────────────────────────────────────────────────────────────
 
 
+class BlogPostAdminForm(forms.ModelForm):
+    """Tags are stored on the post as a JSON list, but edited here as a
+    comma-separated string (what a human actually types). The slug may be
+    left blank — it is generated from the title (with -2, -3… suffixes to
+    stay unique) in ``BlogPostAdmin.save_model``."""
+
+    tags_text = forms.CharField(
+        label="Tags",
+        required=False,
+        help_text="Comma-separated, e.g. 'python, fastapi'. Stored as a JSON list.",
+        widget=forms.TextInput(attrs={"placeholder": "python, fastapi"}),
+    )
+
+    class Meta:
+        model = BlogPost
+        fields = [
+            "title", "slug", "author", "is_published", "published_at",
+            "content", "summary", "featured_image", "tags_text",
+        ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["slug"].required = False
+        self.fields["slug"].help_text = "Leave blank to generate it from the title."
+        if self.instance.pk and self.instance.tags:
+            self.fields["tags_text"].initial = ", ".join(self.instance.tags)
+
+    def clean_tags_text(self):
+        raw = self.cleaned_data.get("tags_text") or ""
+        seen, out = set(), []
+        for part in raw.split(","):
+            tag = part.strip().lower()
+            if tag and tag not in seen:
+                seen.add(tag)
+                out.append(tag)
+        return out
+
+
 @admin.register(BlogPost)
 class BlogPostAdmin(admin.ModelAdmin):
+    form = BlogPostAdminForm
     list_display = ("title", "slug", "author", "is_published", "view_count", "created_at")
     list_filter = ("is_published", "blog_category_integer")
     search_fields = ("title", "slug")
-    readonly_fields = ("id", "author_id", "view_count", "created_at", "updated_at")
+    readonly_fields = (
+        "id", "author_id", "view_count", "created_at", "updated_at",
+        "featured_image_thumb",
+    )
     ordering = ("-created_at",)
 
     def get_queryset(self, request):
@@ -218,15 +261,37 @@ class BlogPostAdmin(admin.ModelAdmin):
         now = timezone.now()
         if not change:
             obj.id = uuid.uuid4()
-            obj.created_at = now
-            obj.updated_at = now
-        else:
-            obj.updated_at = now
+        obj.created_at = getattr(obj, "created_at", None) or now
+        obj.updated_at = now
+        obj.tags = form.cleaned_data.get("tags_text") or None
+        # Blank slug → derive it from the title, auto-suffixing -2, -3… to
+        # stay unique. An EXPLICIT slug is kept as-is: if it collides, the
+        # form's own unique validation rejects it (standard admin behavior).
+        if not obj.slug:
+            base = slugify(obj.title) or "post"
+            candidate, n = base, 1
+            while BlogPost.objects.filter(slug=candidate).exclude(pk=obj.pk).exists():
+                n += 1
+                candidate = f"{base}-{n}"
+            obj.slug = candidate
         super().save_model(request, obj, form, change)
+
+    def featured_image_thumb(self, obj):
+        url = obj.featured_image or ""
+        if url.startswith(("http://", "https://")):
+            return format_html(
+                '<img src="{}" style="max-width:320px;max-height:200px" alt="featured image"/>',
+                escape(url),
+            )
+        return escape(url) or "—"
+
+    featured_image_thumb.short_description = "Featured image"
 
     fieldsets = (
         (None, {"fields": ("title", "slug", "author", "is_published", "published_at")}),
-        ("Content", {"fields": ("content", "summary", "featured_image", "tags")}),
+        ("Content", {
+            "fields": ("content", "summary", "featured_image", "featured_image_thumb", "tags_text"),
+        }),
         ("System", {"classes": ("collapse",), "fields": ("id", "view_count", "created_at", "updated_at", "blog_category_integer")}),
     )
 
