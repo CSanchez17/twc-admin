@@ -70,7 +70,14 @@ def _normalize_for_host_access(url: str) -> str:
     """The panel runs on the HOST; the live app's config points at the
     docker-internal hostname ``mysql``. Rewrite that to 127.0.0.1 with the
     PUBLISHED host port (compose maps mysql to 8801, not the internal 3306)
-    so the same database is reachable from the host."""
+    so the same database is reachable from the host.
+
+    When the panel itself runs in a container (TWC_PANEL_IN_DOCKER=1) it is
+    attached to the app stack's network, where ``mysql:3306`` resolves
+    natively — no rewrite (127.0.0.1 inside the container would be the panel
+    itself)."""
+    if os.environ.get("TWC_PANEL_IN_DOCKER") == "1":
+        return url
     parsed = urlparse(url)
     netloc = parsed.netloc
     if not netloc:
@@ -140,7 +147,11 @@ DATABASES = {
     "default": _db_config(_resolve_database_url()),
     "admin_auth": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": str(BASE_DIR / ".admin_auth.sqlite3"),
+        # Overridable so the Docker container can point at its mounted /data
+        # dir (the host file moved to .admin_auth/admin_auth.sqlite3).
+        "NAME": os.environ.get(
+            "ADMIN_AUTH_DB", str(BASE_DIR / ".admin_auth.sqlite3")
+        ),
     },
 }
 

@@ -44,9 +44,9 @@ README = Path(__file__).resolve().parents[2] / "README.md"
 
 
 def _readme_documented_paths() -> list[str]:
-    """Every `http://127.0.0.1:8889<rest>` path documented in the README."""
+    """Every `http://127.0.0.1:8805<rest>` path documented in the README."""
     text = README.read_text(encoding="utf-8")
-    return [m.group(1) for m in re.finditer(r"`http://127.0.0.1:8889(/[^`]*)`", text)]
+    return [m.group(1) for m in re.finditer(r"`http://127.0.0.1:8805(/[^`]*)`", text)]
 
 
 # Every shared-schema model that has a ModelAdmin in panel/admin.py MUST be

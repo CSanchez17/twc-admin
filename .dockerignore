@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+.admin_auth/
+.admin_auth.sqlite3
+*.md

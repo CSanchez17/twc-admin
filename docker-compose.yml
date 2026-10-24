@@ -1,0 +1,55 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# twc-admin — Django admin panel, containerized
+#
+# Runs the panel (gunicorn) on 8805 and joins the APP stack's network
+# (compose project "twc" → network `twc_default`) so it reaches MySQL at
+# mysql:3306 DIRECTLY — no host port mapping needed for the DB.
+#
+# The shared app's config (DATABASE_URL & co) is passed at runtime via
+# env_file (../config/.env of the app repo) — it is gitignored and is NEVER
+# baked into the image.
+#
+# Usage:
+#   docker compose up -d --build     # first time / after code changes
+#   docker compose logs -f admin
+#   docker compose down
+# ─────────────────────────────────────────────────────────────────────────────
+name: twc-admin
+
+services:
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: twc-admin:latest
+    container_name: twc-admin
+    # tini reaps gunicorn child workers (same pattern as the app stack).
+    init: true
+    ports:
+      - "8805:8000"
+    environment:
+      # Inside the container the docker-internal hostname `mysql` resolves
+      # natively on the shared network — skip the host-side 127.0.0.1:8801
+      # rewrite (settings.py checks this flag).
+      - TWC_PANEL_IN_DOCKER=1
+      # Where the panel-local auth sqlite lives inside the container
+      # (settings.py reads it).
+      - ADMIN_AUTH_DB=/data/admin_auth.sqlite3
+    env_file:
+      # The live app's config (sibling repo): exactly the database the
+      # running site writes to.
+      - ../twc/config/.env
+    volumes:
+      # Panel-local auth DB (superuser twcadmin, sessions, perms). Bind-mount
+      # the host DIRECTORY (not the bare file: on Windows a single-file mount
+      # is read-only for the container's non-root user) so the existing
+      # account keeps working across rebuilds.
+      - ./.admin_auth:/data
+    restart: unless-stopped
+    networks:
+      - twc
+
+networks:
+  twc:
+    external: true
+    name: twc_default

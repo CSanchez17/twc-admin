@@ -9,15 +9,16 @@ posts, categorías, tags y el resto del esquema.
 
 | Campo | Valor |
 |---|---|
-| URL | `http://127.0.0.1:8889/` |
+| URL | `http://127.0.0.1:8805/` (Docker) · `http://127.0.0.1:8889/` (runserver dev) |
 | Usuario | `twcadmin` |
 | Contraseña | `TwcAdmin2026!` |
-| Tags | `http://127.0.0.1:8889/tags/` |
+| Tags | `http://127.0.0.1:8805/tags/` |
 
 - Resetear: `.venv\Scripts\python.exe manage.py changepassword twcadmin`
 - El auth del panel vive en sqlite local (`.admin_auth.sqlite3`), separado de
   los usuarios del sitio (esos se gestionan dentro del panel, sección
-  **Users**).
+  **usuarios del sitio**, grupo *Panel* — no confundir con **Usuarios** del
+  grupo *Authentication and authorization*, que es la cuenta del propio panel).
 - ⚠️ La contraseña está en este README porque el panel corre en desarrollo
   local (127.0.0.1). Si algún día lo expones, cambia la contraseña, setea
   `DJANGO_SECRET_KEY` fuerte y sirve con HTTPS.
@@ -27,6 +28,19 @@ posts, categorías, tags y el resto del esquema.
 Prerrequisito: el stack Docker de `C:\Projects\twc` corriendo (el panel
 lee `DATABASE_URL` desde `C:\Projects\twc\config\.env`, o sea exactamente la
 DB que escribe el sitio vivo).
+
+### Opción A — Docker (la forma canónica, puerto 8805)
+
+```bash
+cd C:\Projects\twc-admin
+docker compose up -d --build
+```
+
+El contenedor se une a la red del stack de la app (`twc_default`) y habla
+directo con `mysql:3306` — sin mapeo de puerto para la DB. El auth sqlite
+queda bind-montado en el host (la cuenta `twcadmin` sobrevive a rebuilds).
+
+### Opción B — runserver (desarrollo sin Docker, puerto 8889)
 
 ```bat
 cd C:\Projects\twc-admin
@@ -53,7 +67,7 @@ Comandos útiles:
 | **Blog Posts** | CRUD completo. Slug auto desde el título (colisiones → `-2`, `-3`…), tags como texto separado por comas (se guarda como JSON en el post), categoría en `<select>` (de la tabla `blog_categories`), imagen destacada con vista previa. |
 | **Blog Categories** | System of record de los nombres de categoría: la app FastAPI los lee para el sitio y para el select del editor. El slug se autogenera al crear y queda congelado (renombrar mantiene el slug). Borrar una categoría no toca los posts: estos conservan su id entero y la app cae al fallback legacy / "General". |
 | **Tags** → `/tags/` | Los tags son arrays JSON en cada post (no hay tabla). Lista con conteo de posts, **renombrar** (reescibe todos los posts que lo llevan; si el destino ya existe, mergea sin duplicar) y **eliminar** (lo saca de todos). |
-| **Users** | Usuarios de la app FastAPI: alta con contraseña Argon2id (compatible directo con el login de la app), rol, confirmación de email, edición de perfil. |
+| **usuarios del sitio** | Usuarios de la app FastAPI (la DB real de MySQL): alta con contraseña Argon2id (compatible directo con el login de la app), rol, confirmación de email, edición de perfil. |
 | **Blog Comments** | Listar/moderar (aprobar, eliminar). |
 | **Media Files** | CRUD de archivos subidos. |
 | **Notifications** | Listar + acción *mark read*. |
@@ -80,15 +94,19 @@ DJANGO_SETTINGS_MODULE=twc_project.settings_test .venv\Scripts\python.exe manage
 ```
 
 La test suite corre contra sqlite **in-memory** (ver `twc_project/settings_test.py`):
-jamás toca el MySQL vivo. 34 tests: mirrors/UUID, admins de contenido,
-editor de posts, seed de categorías, CRUD de categorías y gestor de tags.
+jamás toca el MySQL vivo. 39 tests: mirrors/UUID, admins de contenido,
+registro de admins, editor de posts, seed de categorías, CRUD de categorías,
+gestor de tags y URLs documentadas en este README.
 
 ## Estructura
 
 ```
 twc-admin/
 ├── manage.py
-├── requirements.txt          # Django, PyMySQL, argon2-cffi
+├── requirements.txt          # Django, PyMySQL, argon2-cffi, gunicorn
+├── Dockerfile                # multi-stage, non-root, healthcheck
+├── docker-compose.yml        # panel en 8805, red twc_default
+├── docker-entrypoint.sh      # migrate (alias admin_auth) + gunicorn
 ├── .admin_auth.sqlite3       # auth del panel (gitignored)
 ├── panel/
 │   ├── models.py             # mirrors managed=False del esquema compartido
