@@ -9,9 +9,10 @@ posts, categorías, tags y el resto del esquema.
 
 | Campo | Valor |
 |---|---|
-| URL | `http://127.0.0.1:8000/admin/` |
+| URL | `http://127.0.0.1:8000/` |
 | Usuario | `twcadmin` |
 | Contraseña | `TwcAdmin2026!` |
+| Tags | `http://127.0.0.1:8000/tags/` |
 
 - Resetear: `.venv\Scripts\python.exe manage.py changepassword twcadmin`
 - El auth del panel vive en sqlite local (`.admin_auth.sqlite3`), separado de
@@ -51,7 +52,7 @@ Comandos útiles:
 |---|---|
 | **Blog Posts** | CRUD completo. Slug auto desde el título (colisiones → `-2`, `-3`…), tags como texto separado por comas (se guarda como JSON en el post), categoría en `<select>` (de la tabla `blog_categories`), imagen destacada con vista previa. |
 | **Blog Categories** | System of record de los nombres de categoría: la app FastAPI los lee para el sitio y para el select del editor. El slug se autogenera al crear y queda congelado (renombrar mantiene el slug). Borrar una categoría no toca los posts: estos conservan su id entero y la app cae al fallback legacy / "General". |
-| **Tags** → `/admin/tags/` | Los tags son arrays JSON en cada post (no hay tabla). Lista con conteo de posts, **renombrar** (reescibe todos los posts que lo llevan; si el destino ya existe, mergea sin duplicar) y **eliminar** (lo saca de todos). |
+| **Tags** → `/tags/` | Los tags son arrays JSON en cada post (no hay tabla). Lista con conteo de posts, **renombrar** (reescibe todos los posts que lo llevan; si el destino ya existe, mergea sin duplicar) y **eliminar** (lo saca de todos). |
 | **Users** | Usuarios de la app FastAPI: alta con contraseña Argon2id (compatible directo con el login de la app), rol, confirmación de email, edición de perfil. |
 | **Blog Comments** | Listar/moderar (aprobar, eliminar). |
 | **Media Files** | CRUD de archivos subidos. |
@@ -67,7 +68,7 @@ Comandos útiles:
   `app/modern_twc/repositories/post.py`). Fallback: mapa legacy 1-23 si la
   tabla está vacía/falta, para que posts antiguos sigan mostrando nombre.
 - **Tags**: columna `blog_posts.tags` (JSON array, minúsculas). El editor de
-  posts la escribe por post; `/admin/tags/` la edita a nivel global.
+  posts la escribe por post; `/tags/` la edita a nivel global.
 - **Esquema**: los modelos del panel son *mirrors* `managed=False` — Django
   no migra la DB compartida; el esquema lo dueña la app FastAPI (migraciones
   alembic en `C:\Projects\twc\migrations`).
@@ -92,7 +93,7 @@ twc-admin/
 ├── panel/
 │   ├── models.py             # mirrors managed=False del esquema compartido
 │   ├── admin.py              # todos los ModelAdmin + forms custom
-│   ├── views.py              # página standalone /admin/tags/
+│   ├── views.py              # página standalone /tags/
 │   ├── templates/panel/tags.html
 │   ├── fields.py             # HyphenatedUUIDField (UUID con guiones)
 │   ├── management/commands/seed_categories.py
@@ -101,6 +102,6 @@ twc-admin/
 └── twc_project/
     ├── settings.py           # default = MySQL compartido (twc/config/.env)
     ├── settings_test.py      # in-memory sqlite para tests
-    ├── urls.py               # /admin/tags/ + sitio de admin
+    ├── urls.py               # /tags/ + sitio de admin (montado en /)
     └── routers.py            # auth → alias admin_auth
 ```

@@ -1,8 +1,9 @@
 """Standalone admin pages (outside the AdminSite).
 
-The tag manager lives at /admin/tags/ — a full page rather than a
-ModelAdmin, because tags have no table: they are JSON arrays on each
-post (``blog_posts.tags``).
+The tag manager lives at /tags/ — a full page rather than a ModelAdmin,
+because tags have no table: they are JSON arrays on each post
+(``blog_posts.tags``). The admin site itself is mounted at the root ("/"),
+so this page sits next to it (like /login/ and /panel/…).
 """
 from collections import Counter
 
