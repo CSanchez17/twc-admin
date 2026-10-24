@@ -86,6 +86,25 @@ class BlogPost(models.Model):
         return self.title
 
 
+class BlogCategory(models.Model):
+    """Mirror of ``modern_twc.models.content.BlogCategory`` (table
+    ``blog_categories``) — created by the ``seed_categories`` management
+    command, then admin-managed here (the FastAPI app only reads it)."""
+
+    id = models.IntegerField(primary_key=True)
+    name = models.CharField(max_length=120, unique=True)
+    slug = models.CharField(max_length=140, unique=True)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        db_table = "blog_categories"
+        ordering = ["id"]
+
+    def __str__(self):
+        return self.name
+
+
 class BlogComment(models.Model):
     """Mirror of ``modern_twc.models.content.BlogComment`` (table ``blog_comments``)."""
 

@@ -25,6 +25,7 @@ from django.utils.text import slugify
 
 from .models import (
     AnalyticsEvent,
+    BlogCategory,
     BlogComment,
     BlogPost,
     BlogReaction,
@@ -206,13 +207,22 @@ class BlogPostAdminForm(forms.ModelForm):
     """Tags are stored on the post as a JSON list, but edited here as a
     comma-separated string (what a human actually types). The slug may be
     left blank — it is generated from the title (with -2, -3… suffixes to
-    stay unique) in ``BlogPostAdmin.save_model``."""
+    stay unique) in ``BlogPostAdmin.save_model``. The category is a
+    <select> over the blog_categories table (saved as the post's
+    ``BlogCategoryInteger``)."""
 
     tags_text = forms.CharField(
         label="Tags",
         required=False,
         help_text="Comma-separated, e.g. 'python, fastapi'. Stored as a JSON list.",
         widget=forms.TextInput(attrs={"placeholder": "python, fastapi"}),
+    )
+    category = forms.ModelChoiceField(
+        label="Category",
+        queryset=BlogCategory.objects.all(),
+        required=False,
+        empty_label="— (no category)",
+        help_text="From the Categories section; stored as the post's category id.",
     )
 
     class Meta:
@@ -228,6 +238,8 @@ class BlogPostAdminForm(forms.ModelForm):
         self.fields["slug"].help_text = "Leave blank to generate it from the title."
         if self.instance.pk and self.instance.tags:
             self.fields["tags_text"].initial = ", ".join(self.instance.tags)
+        if self.instance.pk and self.instance.blog_category_integer:
+            self.fields["category"].initial = self.instance.blog_category_integer
 
     def clean_tags_text(self):
         raw = self.cleaned_data.get("tags_text") or ""
@@ -264,6 +276,9 @@ class BlogPostAdmin(admin.ModelAdmin):
         obj.created_at = getattr(obj, "created_at", None) or now
         obj.updated_at = now
         obj.tags = form.cleaned_data.get("tags_text") or None
+        # Category select → the post's BlogCategoryInteger (or None).
+        chosen = form.cleaned_data.get("category")
+        obj.blog_category_integer = chosen.id if chosen else None
         # Blank slug → derive it from the title, auto-suffixing -2, -3… to
         # stay unique. An EXPLICIT slug is kept as-is: if it collides, the
         # form's own unique validation rejects it (standard admin behavior).
@@ -288,12 +303,46 @@ class BlogPostAdmin(admin.ModelAdmin):
     featured_image_thumb.short_description = "Featured image"
 
     fieldsets = (
-        (None, {"fields": ("title", "slug", "author", "is_published", "published_at")}),
+        (None, {"fields": ("title", "slug", "author", "is_published", "published_at", "category")}),
         ("Content", {
             "fields": ("content", "summary", "featured_image", "featured_image_thumb", "tags_text"),
         }),
-        ("System", {"classes": ("collapse",), "fields": ("id", "view_count", "created_at", "updated_at", "blog_category_integer")}),
+        ("System", {"classes": ("collapse",), "fields": ("id", "view_count", "created_at", "updated_at")}),
     )
+
+
+# ── Categories ──────────────────────────────────────────────────────────────
+
+
+@admin.register(BlogCategory)
+class BlogCategoryAdmin(admin.ModelAdmin):
+    """The blog_categories table (seeded by ``manage.py seed_categories``).
+
+    The slug is generated from the name at creation and then frozen: it is
+    the category's stable identifier, so renaming the name keeps the slug.
+    Deleting a category does not touch posts — they keep their integer id,
+    and the FastAPI read path falls back to the legacy name / 'General'.
+    """
+
+    list_display = ("id", "name", "slug", "created_at")
+    search_fields = ("name", "slug")
+    ordering = ("id",)
+
+    def get_readonly_fields(self, request, obj=None):
+        # The slug is auto-generated at creation and frozen afterwards; id
+        # and created_at are never edited here.
+        return ("id", "slug", "created_at")
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            obj.created_at = timezone.now()
+            base = slugify(obj.name) or "category"
+            candidate, n = base, 2
+            while BlogCategory.objects.filter(slug=candidate).exists():
+                candidate = f"{base}-{n}"
+                n += 1
+            obj.slug = candidate
+        super().save_model(request, obj, form, change)
 
 
 # ── Comments ────────────────────────────────────────────────────────────────

@@ -19,6 +19,7 @@ from panel import models as M
 # Creation order matters: parents before children (FK constraints).
 MIRROR_TABLES = [
     M.TWCUser,
+    M.BlogCategory,
     M.BlogPost,
     M.BlogComment,
     M.BlogReaction,
