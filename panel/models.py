@@ -44,6 +44,10 @@ class TWCUser(models.Model):
         managed = False
         db_table = "users"
         ordering = ["-created_at"]
+        # Spanish labels so the admin index is unambiguous: this is the SITE's
+        # users (the shared MySQL), NOT the panel's own "Usuarios" (auth) entry.
+        verbose_name = "usuario del sitio"
+        verbose_name_plural = "usuarios del sitio"
 
     def __str__(self):
         return f"{self.username} <{self.email}>"
