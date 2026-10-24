@@ -81,7 +81,12 @@ class DeleteSelectedActionTest(MirrorTestCase):
             "_selected_action": [str(gone1.id), str(gone2.id)],
             "post": "yes",
         })
-        self.assertEqual(TWCUser.objects.count(), 1)
-        self.assertEqual(TWCUser.objects.first().id, kept.id)
+        # The shared test DB may hold committed seed rows from the app's
+        # suite — assert on the probes, not on an absolute count.
+        remaining = list(
+            TWCUser.objects.filter(username__startswith="probe-")
+            .values_list("id", flat=True)
+        )
+        self.assertEqual(remaining, [kept.id])
         kept.refresh_from_db()
         self.assertTrue(kept.is_active)

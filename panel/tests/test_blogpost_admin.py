@@ -58,7 +58,11 @@ class SlugAutogenerationTest(BlogPostAdminBase):
         self.add_post(title="Same")  # auto slug "same"
         resp = self.add_post(title="Same")  # auto slug "same-2"
         self.assertEqual(resp.status_code, 302)
-        slugs = sorted(BlogPost.objects.values_list("slug", flat=True))
+        # Scoped to this test's posts — the shared test DB may hold
+        # committed seed posts from the app's suite.
+        slugs = sorted(
+            BlogPost.objects.filter(title="Same").values_list("slug", flat=True)
+        )
         self.assertEqual(slugs, ["same", "same-2"])
 
     def test_empty_title_slug_fallback(self):
@@ -78,7 +82,8 @@ class TagsInputTest(BlogPostAdminBase):
     def test_blank_tags_store_none_or_empty(self):
         resp = self.add_post(tags_text="")
         self.assertEqual(resp.status_code, 302)
-        post = BlogPost.objects.get()
+        # Scoped by title — the shared test DB may hold seed posts.
+        post = BlogPost.objects.get(title="Post Title")
         self.assertFalse(post.tags)
 
     def test_change_form_shows_comma_list(self):

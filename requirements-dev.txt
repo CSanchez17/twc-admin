@@ -1,0 +1,8 @@
+# Test-only dependencies for the panel (NOT used by the runtime image).
+# The panel's tests share the app's local test DB (test_db.sqlite); when
+# that file is fresh, the schema is initialized from the app's own models,
+# so the app's SQLAlchemy pins must match here (see requirements.fastapi.txt
+# in the app repo).
+-r requirements.txt
+SQLAlchemy==2.0.51
+python-dotenv==1.2.2

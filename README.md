@@ -90,13 +90,22 @@ Comandos útiles:
 ## Tests
 
 ```bat
-DJANGO_SETTINGS_MODULE=twc_project.settings_test .venv\Scripts\python.exe manage.py test panel
+DJANGO_SETTINGS_MODULE=twc_project.settings_test .venv\Scripts\python.exe manage.py test panel --keepdb
 ```
 
-La test suite corre contra sqlite **in-memory** (ver `twc_project/settings_test.py`):
-jamás toca el MySQL vivo. 39 tests: mirrors/UUID, admins de contenido,
-registro de admins, editor de posts, seed de categorías, CRUD de categorías,
-gestor de tags y URLs documentadas en este README.
+La test suite corre contra la **test DB compartida** con la app FastAPI:
+`test_db.sqlite` en la raíz del repo de la app (`C:\Projects\twc`) — el
+mismo archivo que crea y usa la suite pytest de la app. Igual que en prod
+(donde ambas comparten el MySQL), en test comparten una BD local. Con
+`--keepdb` + `MIGRATE: False` el runner de Django trata ese archivo como
+**opaco**: no lo crea, migra ni borra. Si el archivo no existe aún, el
+harness (`panel/tests/base.py`) lo inicializa una vez **desde los modelos
+SQLAlchemy de la propia app** — la única fuente de verdad del esquema; no
+hay lista de tablas mantenida a mano. El auth del panel (`admin_auth`)
+sigue siendo sqlite in-memory. 41 tests: mirrors/UUID, admins de contenido,
+registro de admins, editor de posts, seed de categorías, CRUD de
+categorías, gestor de tags, acciones de usuarios y URLs documentadas en
+este README.
 
 ## Estructura
 
@@ -115,11 +124,11 @@ twc-admin/
 │   ├── templates/panel/tags.html
 │   ├── fields.py             # HyphenatedUUIDField (UUID con guiones)
 │   ├── management/commands/seed_categories.py
-│   └── tests/                # harness (tablas en setUpModule) + 34 tests
+│   └── tests/                # harness (BD compartida) + 41 tests
 ├── scripts/                  # probes de debug (FK, roundtrip de login)
 └── twc_project/
     ├── settings.py           # default = MySQL compartido (twc/config/.env)
-    ├── settings_test.py      # in-memory sqlite para tests
+    ├── settings_test.py      # test DB compartida con la app (--keepdb)
     ├── urls.py               # /tags/ + sitio de admin (montado en /)
     └── routers.py            # auth → alias admin_auth
 ```

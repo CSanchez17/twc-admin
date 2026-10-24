@@ -148,14 +148,20 @@ class NotificationActionTest(SuperuserMixin, TestCase):
                 id=uuid.uuid4(), user_id=user.id, type="post",
                 title=f"t{i}", message="m", is_read=False, created_at=now,
             )
+        mine = list(
+            Notification.objects.filter(user_id=user.id).values_list("id", flat=True)
+        )
         resp = self.client.post(
             reverse("admin:panel_notification_changelist"),
-            {"action": "mark_read",
-             "_selected_action": [str(n.id) for n in Notification.objects.all()]},
+            {"action": "mark_read", "_selected_action": [str(i) for i in mine]},
         )
         # Django ≥5.1: an executed action redirects to the changelist
         self.assertEqual(resp.status_code, 302)
-        self.assertEqual(Notification.objects.filter(is_read=True).count(), 2)
+        # Scoped to this test's user — the shared test DB may hold
+        # committed notifications from the app's suite.
+        self.assertEqual(
+            Notification.objects.filter(user_id=user.id, is_read=True).count(), 2
+        )
 
 
 class ContactMessageActionTest(SuperuserMixin, TestCase):
@@ -166,7 +172,7 @@ class ContactMessageActionTest(SuperuserMixin, TestCase):
             subject="hola", message="mensaje", is_resolved=False,
             created_at=now,
         )
-        msg = ContactMessage.objects.first()
+        msg = ContactMessage.objects.get(email="ana@x.com")
         resp = self.client.post(
             reverse("admin:panel_contactmessage_changelist"),
             {"action": "resolve_messages", "_selected_action": [str(msg.id)]},
