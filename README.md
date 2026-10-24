@@ -109,8 +109,13 @@ este README.
 
 ## Estructura
 
+> Qué es cada sección del índice del panel (qué almacena, quién la
+> escribe, qué se puede editar): [`ADMIN-SECTIONS.md`](ADMIN-SECTIONS.md)
+
 ```
 twc-admin/
+├── README.md
+├── ADMIN-SECTIONS.md         # qué es cada sección del panel
 ├── manage.py
 ├── requirements.txt          # Django, PyMySQL, argon2-cffi, gunicorn
 ├── Dockerfile                # multi-stage, non-root, healthcheck
