@@ -229,8 +229,9 @@ class BlogPostAdminForm(forms.ModelForm):
     class Meta:
         model = BlogPost
         fields = [
-            "title", "slug", "author", "is_published", "published_at",
-            "content", "summary", "featured_image", "tags_text",
+            "title", "slug", "author", "visibility", "is_published",
+            "published_at", "content", "summary", "featured_image",
+            "tags_text",
         ]
 
     def __init__(self, *args, **kwargs):
@@ -241,6 +242,12 @@ class BlogPostAdminForm(forms.ModelForm):
             self.fields["tags_text"].initial = ", ".join(self.instance.tags)
         if self.instance.pk and self.instance.blog_category_integer:
             self.fields["category"].initial = self.instance.blog_category_integer
+
+    def clean_visibility(self):
+        """Blank stays at the model default — never save an empty level
+        (the app's audience gate only knows the four canonical values)."""
+        value = (self.cleaned_data.get("visibility") or "").strip().lower()
+        return value or "public"
 
     def clean_tags_text(self):
         raw = self.cleaned_data.get("tags_text") or ""
@@ -256,12 +263,19 @@ class BlogPostAdminForm(forms.ModelForm):
 @admin.register(BlogPost)
 class BlogPostAdmin(admin.ModelAdmin):
     form = BlogPostAdminForm
-    list_display = ("title", "slug", "author", "is_published", "view_count", "created_at")
-    list_filter = ("is_published", "blog_category_integer")
-    search_fields = ("title", "slug")
+    # Overview: the post id (legacy_id — the numeric /blog/<id> the site
+    # addresses posts with), the audience level (public/members/
+    # subscribers/private), and the is_published flag — the online vs.
+    # draft state (users can save drafts: private posts sit unpublished).
+    list_display = (
+        "title", "legacy_id", "slug", "author", "visibility",
+        "is_published", "view_count", "created_at",
+    )
+    list_filter = ("is_published", "visibility", "blog_category_integer")
+    search_fields = ("title", "slug", "legacy_id")
     readonly_fields = (
-        "id", "author_id", "view_count", "created_at", "updated_at",
-        "featured_image_thumb",
+        "id", "legacy_id", "author_id", "view_count", "created_at",
+        "updated_at", "featured_image_thumb",
     )
     ordering = ("-created_at",)
 
@@ -304,7 +318,12 @@ class BlogPostAdmin(admin.ModelAdmin):
     featured_image_thumb.short_description = "Featured image"
 
     fieldsets = (
-        (None, {"fields": ("title", "slug", "author", "is_published", "published_at", "category")}),
+        (None, {
+            "fields": (
+                "title", "slug", "author", "legacy_id",
+                "visibility", "is_published", "published_at", "category",
+            ),
+        }),
         ("Content", {
             "fields": ("content", "summary", "featured_image", "featured_image_thumb", "tags_text"),
         }),

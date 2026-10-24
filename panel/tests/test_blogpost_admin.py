@@ -112,3 +112,66 @@ class FeaturedImageThumbTest(BlogPostAdminBase):
             reverse("admin:panel_blogpost_change", args=[post.pk])
         )
         self.assertContains(resp, '<img src="https://x.test/a.png"')
+
+
+class VisibilityOverviewTest(BlogPostAdminBase):
+    """Posts overview columns: post id (legacy_id), visibility level
+    (public/members/subscribers/private) and the online-published flag
+    (users can save drafts — the flag distinguishes them)."""
+
+    def make_post(self, slug, **overrides):
+        data = {
+            "id": uuid.uuid4(), "author_id": self.author.id, "content": "{}",
+            "created_at": "2026-10-24 10:00:00", "updated_at": "2026-10-24 10:00:00",
+            "visibility": "public", "is_published": True,
+        }
+        data.update({"title": slug, "slug": slug})
+        data.update(overrides)
+        return BlogPost.objects.create(**data)
+
+    def test_list_shows_post_id_visibility_and_online_flag(self):
+        self.make_post("vis-9314", legacy_id=9314, visibility="members")
+        self.make_post("vis-9315", legacy_id=9315, visibility="subscribers")
+        self.make_post(
+            "vis-9316", legacy_id=9316, visibility="private",
+            is_published=False,
+        )
+        resp = self.client.get(reverse("admin:panel_blogpost_changelist"))
+        self.assertEqual(resp.status_code, 200)
+        # Post id column (the /blog/<id> number the site uses).
+        self.assertContains(resp, ">9314<")
+        # Visibility levels, human-readable.
+        self.assertContains(resp, "Members")
+        self.assertContains(resp, "Subscribers")
+        self.assertContains(resp, "Private (draft)")
+        # Online flag: modern admin renders booleans as yes/no SVG icons —
+        # the draft (is_published=False) shows the "no" icon, the published
+        # posts the "yes" icon.
+        self.assertContains(resp, "icon-yes.svg")
+        self.assertContains(resp, "icon-no.svg")
+
+    def test_change_form_shows_visibility_select_and_post_id(self):
+        post = self.make_post("vis-777", legacy_id=777, visibility="members")
+        resp = self.client.get(
+            reverse("admin:panel_blogpost_change", args=[post.pk])
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'name="visibility"')
+        for label in ("Public", "Members", "Subscribers", "Private (draft)"):
+            self.assertContains(resp, label)
+        self.assertContains(resp, ">777<")
+
+    def test_saving_visibility_change_persists(self):
+        post = self.make_post("vis-888", legacy_id=888)
+        resp = self.client.post(
+            reverse("admin:panel_blogpost_change", args=[post.pk]),
+            {
+                "title": "vis-888", "slug": "vis-888",
+                "author": str(self.author.id), "content": "{}",
+                "visibility": "subscribers", "is_published": "on",
+                "tags_text": "",
+            },
+        )
+        self.assertEqual(resp.status_code, 302)
+        post.refresh_from_db()
+        self.assertEqual(post.visibility, "subscribers")

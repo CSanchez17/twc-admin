@@ -68,6 +68,20 @@ class BlogPost(models.Model):
     content = models.TextField()  # EditorJS JSON
     summary = models.TextField(null=True, blank=True)
     is_published = models.BooleanField(default=False)
+    # Audience level (mirrors the app's blog_posts.visibility): 'public',
+    # 'members', 'subscribers', 'private'. 'private' is the draft case —
+    # the is_published flag mirrors it (see the app's createPost_DB).
+    visibility = models.CharField(
+        max_length=16,
+        default="public",
+        blank=True,
+        choices=(
+            ("public", "Public"),
+            ("members", "Members"),
+            ("subscribers", "Subscribers"),
+            ("private", "Private (draft)"),
+        ),
+    )
     published_at = models.DateTimeField(null=True, blank=True)
     view_count = models.IntegerField(default=0)
     featured_image = models.CharField(max_length=512, null=True, blank=True)
