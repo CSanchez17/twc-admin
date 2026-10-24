@@ -1,0 +1,15 @@
+# Panel-local secrets & env — never commit
+.venv/
+.admin_auth.sqlite3
+.admin_auth.sqlite3-shm
+.admin_auth.sqlite3-wal
+twc_dev.sqlite*
+.env
+*.env
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+Thumbs.db
+desktop.ini
+.vscode/
