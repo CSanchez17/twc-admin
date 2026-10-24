@@ -111,7 +111,8 @@ class ChatRoomCrudTest(SuperuserMixin, TestCase):
         self.assertEqual(room.name, "off-topic")
 
         delete_url = reverse("admin:panel_chatroom_delete", args=[room.pk])
-        resp = self.client.post(delete_url, {})
+        # Django ≥5: the delete POST must carry the hidden object_id field
+        resp = self.client.post(delete_url, {"object_id": str(room.pk)})
         self.assertEqual(resp.status_code, 302)
         self.assertFalse(ChatRoom.objects.filter(name="off-topic").exists())
 
@@ -152,7 +153,8 @@ class NotificationActionTest(SuperuserMixin, TestCase):
             {"action": "mark_read",
              "_selected_action": [str(n.id) for n in Notification.objects.all()]},
         )
-        self.assertEqual(resp.status_code, 200)
+        # Django ≥5.1: an executed action redirects to the changelist
+        self.assertEqual(resp.status_code, 302)
         self.assertEqual(Notification.objects.filter(is_read=True).count(), 2)
 
 
@@ -167,8 +169,9 @@ class ContactMessageActionTest(SuperuserMixin, TestCase):
         msg = ContactMessage.objects.first()
         resp = self.client.post(
             reverse("admin:panel_contactmessage_changelist"),
-            {"action": "resolve", "_selected_action": [str(msg.id)]},
+            {"action": "resolve_messages", "_selected_action": [str(msg.id)]},
         )
-        self.assertEqual(resp.status_code, 200)
+        # Django ≥5.1: an executed action redirects to the changelist
+        self.assertEqual(resp.status_code, 302)
         msg.refresh_from_db()
         self.assertTrue(msg.is_resolved)
