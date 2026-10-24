@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tags — TWC Admin</title>
+  <style>
+    :root { --bg: #101418; --panel: #1a2027; --border: #2a323c; --text: #e8edf2; --muted: #8b98a5; --accent: #2f9e44; --danger: #e03131; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 2rem 1rem; background: var(--bg); color: var(--text);
+           font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+    main { max-width: 760px; margin: 0 auto; }
+    h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+    .sub { color: var(--muted); margin: 0 0 1.25rem; font-size: .9rem; }
+    .sub a { color: var(--accent); text-decoration: none; }
+    .msg { padding: .6rem .9rem; border-radius: 8px; margin: 0 0 .75rem; font-size: .9rem; }
+    .msg-success { background: rgba(47,158,68,.15); border: 1px solid var(--accent); }
+    .msg-error { background: rgba(224,49,49,.15); border: 1px solid var(--danger); }
+    .msg-info { background: rgba(139,152,165,.15); border: 1px solid var(--muted); }
+    table { width: 100%; border-collapse: collapse; background: var(--panel);
+            border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    th, td { text-align: left; padding: .65rem .9rem; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+    tr:last-child td { border-bottom: none; }
+    .count { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .tag { font-family: Consolas, monospace; font-size: .92rem; }
+    form.inline { display: inline-flex; gap: .35rem; align-items: center; }
+    input[type="text"] { background: var(--bg); border: 1px solid var(--border); color: var(--text);
+                         border-radius: 6px; padding: .35rem .55rem; font-size: .88rem; width: 130px; }
+    button { border: none; border-radius: 6px; padding: .38rem .75rem; font-size: .85rem;
+             cursor: pointer; font-weight: 600; }
+    .btn-rename { background: var(--accent); color: #fff; }
+    .btn-rename:hover { filter: brightness(1.1); }
+    .btn-delete { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+    .btn-delete:hover { background: rgba(224,49,49,.12); }
+    .empty { padding: 2rem; text-align: center; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Tags del blog</h1>
+    <p class="sub">
+      {{ total }} tag(s) en {{ tags|length }} grupo(s) — viven como JSON en cada post.
+      <a href="{% url 'admin:index' %}">← Panel de administración</a>
+    </p>
+
+    {% for message in messages %}
+      <div class="msg msg-{{ message.tags|default:'info' }}">{{ message }}</div>
+    {% endfor %}
+
+    {% if tags %}
+    <table>
+      <thead>
+        <tr><th>Tag</th><th>Posts</th><th>Renombrar</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for tag, n in tags %}
+        <tr>
+          <td class="tag">{{ tag }}</td>
+          <td class="count">{{ n }}</td>
+          <td>
+            <form class="inline" method="post">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="rename">
+              <input type="hidden" name="old" value="{{ tag }}">
+              <input type="text" name="new" placeholder="nuevo nombre" required
+                     aria-label="Nuevo nombre para {{ tag }}">
+              <button type="submit" class="btn-rename">Renombrar</button>
+            </form>
+          </td>
+          <td>
+            <form class="inline" method="post"
+                  onsubmit="return confirm('¿Eliminar “{{ tag }}” de todos los posts?');">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="old" value="{{ tag }}">
+              <button type="submit" class="btn-delete">Eliminar</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">Aún no hay tags en ningún post.</div>
+    {% endif %}
+  </main>
+</body>
+</html>
