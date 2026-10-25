@@ -1,0 +1,48 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+{% block title %}{{ block.super }} — API key issued{% endblock %}
+{% block content %}
+<div id="content-main" class="apikey-issued">
+  <h1>{% translate "API key issued" %}</h1>
+  <p class="apikey-issued__name">
+    {% blocktranslate with n=key.name o=key.owner s=key.scope %}“{{ n }}” for {{ o }} (scope: {{ s }}).{% endblocktranslate %}
+  </p>
+
+  <p class="apikey-issued__warn">
+    {% translate "Copy this key now. It is shown only this once — after you leave this page it can never be retrieved (only a hash is stored). If you lose it, rotate or delete the key." %}
+  </p>
+
+  <div class="apikey-issued__box">
+    <code id="apikey-plaintext">{{ plaintext }}</code>
+    <button type="button" class="button" id="apikey-copy"
+            data-label="{{ 'Copy' }}" data-done="{{ 'Copied' }}">
+      {% translate "Copy" %}
+    </button>
+  </div>
+
+  <p class="apikey-issued__usage">
+    {% translate "Send it as the" %} <code>X-API-Key</code> {% translate "header. Example:" %}
+  </p>
+  <pre class="apikey-issued__example">curl -H "X-API-Key: {{ plaintext }}" https://api.thewhitecode.com/admin/users</pre>
+
+  <p>
+    <a class="button" href="{% url 'admin:panel_apikey_changelist' %}">
+      {% translate "Back to API keys" %}
+    </a>
+  </p>
+
+  <script>
+    (function () {
+      var btn = document.getElementById("apikey-copy");
+      var code = document.getElementById("apikey-plaintext");
+      if (!btn || !code) return;
+      btn.addEventListener("click", function () {
+        navigator.clipboard.writeText(code.textContent).then(function () {
+          btn.textContent = btn.dataset.done;
+          setTimeout(function () { btn.textContent = btn.dataset.label; }, 2000);
+        });
+      });
+    })();
+  </script>
+</div>
+{% endblock %}

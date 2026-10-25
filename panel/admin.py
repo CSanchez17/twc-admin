@@ -6,6 +6,7 @@
 - ``VisitAdmin``    → who / when / where / which-blog page views.
 - ``BlogPostAdmin`` → manage posts.
 - ``BlogCommentAdmin`` → moderate comments.
+- ``APIKeyAdmin``   → issue/rotate/deactivate API keys (secret shown once).
 - Phase 1 (2026-10-24, CRUD plan):
   - ``MediaFileAdmin``       → upload registry (full CRUD).
   - ``NotificationAdmin``    → list / mark read / delete.
@@ -14,18 +15,22 @@
 - Payments / x402 / contact-email ledger / reactions / schancoin →
   read-only ledgers (viewable, never writable).
 """
+import hashlib
 import re
+import secrets
 import uuid
 
 from django import forms
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.db.models import Count, Q
+from django.template.response import TemplateResponse
 from django.utils import timezone
 from django.utils.html import escape, format_html
 from django.utils.text import slugify
 
 from .models import (
     AnalyticsEvent,
+    APIKey,
     BlogCategory,
     BlogComment,
     BlogPost,
@@ -773,3 +778,102 @@ class SchancoinTransactionAdmin(_ReadOnlyMixin, ColumnChooserMixin, admin.ModelA
         return f"0x{obj.tx_hash[:12]}…"
 
     short_tx.short_description = "Tx"
+
+
+@admin.register(APIKey)
+class APIKeyAdmin(admin.ModelAdmin):
+    """Issue and manage API keys for the modern API.
+
+    The secret is generated server-side (``APIKey.issue`` / ``rotate``),
+    shown ONCE on the issuance page, and never stored in plaintext — only
+    its SHA-256 digest lands in the row.
+    """
+
+    list_display = ("name", "key_prefix", "owner", "scope", "is_active",
+                    "expires_at", "last_used_at", "created_at")
+    list_filter = ("scope", "is_active")
+    search_fields = ("name", "owner__username", "owner__email")
+    date_hierarchy = "created_at"
+    ordering = ("-created_at",)
+    fields = ("name", "owner", "scope", "expires_at",
+              "key_prefix", "last_used_at", "created_at")
+    readonly_fields = ("key_prefix", "last_used_at", "created_at")
+    actions = ("rotate_key", "activate_keys", "deactivate_keys")
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("owner")
+
+    def save_model(self, request, obj, form, change):
+        if not change and not getattr(obj, "key_hash", None):
+            plaintext = _new_key_secret()
+            obj.key_prefix = plaintext[:12]
+            obj.key_hash = _sha256_hex(plaintext)
+            obj.is_active = True
+            if obj.created_at is None:
+                obj.created_at = timezone.now()
+            obj._issued_plaintext = plaintext  # non-persistent, one-time
+        super().save_model(request, obj, form, change)
+
+    def response_add(self, request, obj, post_save_continue=True, raw=False,
+                     change_url=None):
+        plaintext = getattr(obj, "_issued_plaintext", None)
+        if plaintext:
+            return self._issued_page(request, obj, plaintext)
+        return super().response_add(request, obj, post_save_continue, raw,
+                                    change_url)
+
+    def response_action(self, request, queryset):
+        """After rotate_key: the one-time page for the new secret.
+
+        ``super()`` runs the action (which stashes the new plaintext in
+        the session); we pop it here and render the issuance page, so a
+        page refresh shows the plain changelist — the secret is revealed
+        exactly once.
+        """
+        response = super().response_action(request, queryset)
+        stored = request.session.pop("apikey_new_secret", None)
+        if stored and request.POST.get("action") == "rotate_key":
+            obj = queryset.filter(pk=stored["id"]).first()
+            if obj is not None:
+                return self._issued_page(request, obj, stored["plaintext"])
+        return response
+
+    def _issued_page(self, request, obj, plaintext):
+        return TemplateResponse(request, "admin/panel/apikey/issued.html", {
+            "key": obj,
+            "plaintext": plaintext,
+            "opts": self.model._meta,
+        })
+
+    @admin.action(description="Rotate the selected key (exactly one)")
+    def rotate_key(self, request, queryset):
+        if queryset.count() != 1:
+            messages.error(request, "Rotate exactly one key at a time.")
+            return
+        key = queryset.first()
+        plaintext = key.rotate()
+        # One-time handoff: response_action pops this and renders the
+        # issuance page; the session value never reaches storage beyond
+        # the single response cycle.
+        request.session["apikey_new_secret"] = {
+            "id": str(key.pk),
+            "plaintext": plaintext,
+        }
+        messages.success(request, "Key rotated — copy the new secret now.")
+
+    @admin.action(description="Activate the selected keys")
+    def activate_keys(self, request, queryset):
+        queryset.update(is_active=True)
+
+    @admin.action(description="Deactivate the selected keys")
+    def deactivate_keys(self, request, queryset):
+        queryset.update(is_active=False)
+
+
+def _new_key_secret() -> str:
+    """A fresh API-key plaintext: ``twc_`` + 160 random bits."""
+    return f"twc_{secrets.token_hex(20)}"
+
+
+def _sha256_hex(plaintext: str) -> str:
+    return hashlib.sha256(plaintext.encode()).hexdigest()

@@ -5,6 +5,9 @@ Every field maps 1:1 to the SQLAlchemy models in
 the FastAPI side (and vice versa). The panel is the admin UI over this
 schema; the FastAPI app remains the system of record.
 """
+import hashlib
+import secrets
+import uuid
 from django.db import models
 
 from .fields import HyphenatedUUIDField
@@ -51,6 +54,87 @@ class TWCUser(models.Model):
 
     def __str__(self):
         return f"{self.username} <{self.email}>"
+
+
+class APIKey(models.Model):
+    """Mirror of ``modern_twc.models.api_key.ApiKey`` (table ``api_keys``).
+
+    The panel is where keys are ISSUED: ``APIKey.issue()`` generates the
+    plaintext secret (``twc_`` + 40 hex chars), stores only its SHA-256
+    digest, and returns the plaintext for the one-time issuance page.
+    The FastAPI app verifies keys on the ``X-API-Key`` header.
+    """
+
+    SCOPE_CHOICES = [
+        ("read", "read"),  # identity on reads; write methods 403
+        ("write", "write"),  # identity on any method; no admin
+        ("admin", "admin"),  # also passes the admin API routes
+    ]
+
+    id = HyphenatedUUIDField(primary_key=True, default=uuid.uuid4)
+    name = models.CharField(max_length=64)
+    owner = models.ForeignKey(
+        TWCUser,
+        on_delete=models.CASCADE,
+        related_name="api_keys",
+    )
+    key_prefix = models.CharField(max_length=16)
+    key_hash = models.CharField(max_length=64, unique=True)
+    scope = models.CharField(max_length=16, default="read", choices=SCOPE_CHOICES)
+    is_active = models.BooleanField(default=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        db_table = "api_keys"
+        ordering = ["-created_at"]
+        verbose_name = "API key"
+        verbose_name_plural = "API keys"
+
+    def __str__(self):
+        return f"{self.name} ({self.key_prefix}…)"
+
+    @classmethod
+    def issue(
+        cls,
+        owner: "TWCUser",
+        name: str,
+        scope: str = "read",
+        expires_at=None,
+    ) -> tuple["APIKey", str]:
+        """Create a new key; return ``(row, plaintext)``.
+
+        The plaintext is generated here and never persisted — the row
+        keeps only the digest. Callers must surface ``plaintext`` to the
+        operator exactly once.
+        """
+        from django.utils import timezone as _tz
+
+        plaintext = f"twc_{secrets.token_hex(20)}"
+        key = cls(
+            id=uuid.uuid4(),
+            name=name,
+            owner=owner,
+            key_prefix=plaintext[:12],
+            key_hash=hashlib.sha256(plaintext.encode()).hexdigest(),
+            scope=scope,
+            is_active=True,
+            expires_at=expires_at,
+            created_at=_tz.now(),
+        )
+        key.save()
+        return key, plaintext
+
+    def rotate(self) -> str:
+        """Reissue the secret in place; return the new plaintext."""
+        plaintext = f"twc_{secrets.token_hex(20)}"
+        self.key_prefix = plaintext[:12]
+        self.key_hash = hashlib.sha256(plaintext.encode()).hexdigest()
+        self.last_used_at = None
+        self.save(update_fields=["key_prefix", "key_hash", "last_used_at"])
+        return plaintext
 
 
 class BlogPost(models.Model):
