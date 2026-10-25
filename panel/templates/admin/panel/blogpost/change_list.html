@@ -1,0 +1,69 @@
+{% extends "admin/change_list.html" %}
+
+{# Blog posts changelist: per-user column chooser. Every DB column is a
+   checkbox; "Aplicar" writes the selection to ?columns=… (bookmarkable)
+   which the ModelAdmin persists in the session. "Title" is locked — it
+   carries the row's link to the change form. #}
+
+{% block object-tools %}
+{{ block.super }}
+{% if column_chooser %}
+<div id="post-column-chooser">
+  <div class="chooser-title">
+    Columnas visibles
+    <span class="chooser-hint">— se guardan en tu sesión; el enlace con ?columns=… es compartible</span>
+  </div>
+  <div class="chooser-box">
+    {% for key, label, checked, locked in column_chooser %}
+    <label class="chooser-item"{% if locked %} title="Siempre visible"{% endif %}>
+      <input type="checkbox" name="columns" value="{{ key }}"
+             {% if checked %}checked{% endif %}{% if locked %} disabled{% endif %}>
+      <span>{{ label }}{% if locked %} (siempre){% endif %}</span>
+    </label>
+    {% endfor %}
+  </div>
+  <div class="chooser-actions">
+    <button type="button" id="btn-apply-columns" class="button" title="Aplicar la selección de columnas">Aplicar</button>
+    <a href="{% url 'admin:panel_blogpost_changelist' %}?columns_reset=1" class="button" title="Volver a las 8 columnas por defecto">Restablecer</a>
+  </div>
+  <script>
+    (function () {
+      "use strict";
+      var box = document.getElementById("post-column-chooser");
+      if (!box) return;
+      box.querySelector("#btn-apply-columns").addEventListener("click", function () {
+        var params = new URLSearchParams(window.location.search);
+        var values = Array.prototype.map.call(
+          box.querySelectorAll('input[name="columns"]:not(:disabled)'),
+          function (cb) { return cb.checked ? cb.value : null; }
+        ).filter(Boolean);
+        params.set("columns", values.join(","));
+        window.location.search = params.toString();
+      });
+    })();
+  </script>
+  <style>
+    #post-column-chooser {
+      margin: 8px 0;
+      padding: 8px 12px;
+      background: #f8f8f8;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    #post-column-chooser .chooser-title { font-weight: bold; margin-bottom: 6px; }
+    #post-column-chooser .chooser-hint { font-weight: normal; color: #666; font-size: 11px; }
+    #post-column-chooser .chooser-box { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+    #post-column-chooser .chooser-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    #post-column-chooser .chooser-item input[type="checkbox"] { margin: 0; }
+    #post-column-chooser .chooser-actions { margin-top: 8px; display: flex; gap: 8px; }
+  </style>
+</div>
+{% endif %}
+{% endblock %}

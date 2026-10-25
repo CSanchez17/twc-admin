@@ -19,6 +19,7 @@ import uuid
 
 from django import forms
 from django.contrib import admin
+from django.contrib.admin.views.main import ChangeList
 from django.utils import timezone
 from django.utils.html import escape, format_html
 from django.utils.text import slugify
@@ -48,6 +49,64 @@ ROLE_CHOICES = [
     ("moderator", "moderator"),
     ("admin", "admin"),
 ]
+
+
+# ── Blog posts changelist: column chooser ───────────────────────────────────
+# Every physical column of ``blog_posts`` is selectable in the posts
+# overview: author_id through the ``author`` FK and the camelCase
+# ``BlogCategoryInteger`` through its snake_case model field. The default
+# keeps the historical eight-column overview; each user's selection lives
+# in the admin session (per browser) and can be shared via the
+# bookmarkable ``?columns=…`` query string.
+ALL_POST_COLUMNS = (
+    ("legacy_id", "Post ID"),
+    ("title", "Title"),
+    ("slug", "Slug"),
+    ("author", "Author"),
+    ("author_legacy_id", "Author ID (legacy)"),
+    ("visibility", "Visibility"),
+    ("is_published", "Published"),
+    ("view_count", "Views"),
+    ("published_at", "Published at"),
+    ("created_at", "Created"),
+    ("updated_at", "Updated"),
+    ("blog_category_integer", "Category ID"),
+    ("featured_image", "Featured image"),
+    ("summary", "Summary"),
+    ("tags", "Tags"),
+    ("content", "Content"),
+    ("id", "UUID"),
+)
+DEFAULT_POST_COLUMNS = (
+    "title", "legacy_id", "slug", "author", "visibility",
+    "is_published", "view_count", "created_at",
+)
+POST_COLUMNS_SESSION_KEY = "panel_blogpost_columns"
+# Chooser keys that render through a preview method (the raw fields are
+# longtext/JSON — dumping them whole into a table cell would be unusable).
+POST_COLUMN_DISPLAY = {
+    "summary": "summary_preview",
+    "tags": "tags_preview",
+    "content": "content_preview",
+}
+
+
+class PostChangelist(ChangeList):
+    """ChangeList that ignores the column-chooser query parameters.
+
+    Every unknown ``?param`` on the changelist URL is parsed as a model
+    lookup filter — and an unknown one raises
+    ``IncorrectLookupParameters`` (the infamous redirect to ``?e=1``).
+    The chooser's ``columns`` / ``columns_reset`` params are UI state,
+    not filters, so they are dropped before the lookup parsing."""
+
+    CHOOSER_PARAMS = ("columns", "columns_reset")
+
+    def get_filters_params(self, params=None):
+        params = super().get_filters_params(params)
+        for key in self.CHOOSER_PARAMS:
+            params.pop(key, None)
+        return params
 
 
 # ── Users ───────────────────────────────────────────────────────────────────
@@ -263,14 +322,10 @@ class BlogPostAdminForm(forms.ModelForm):
 @admin.register(BlogPost)
 class BlogPostAdmin(admin.ModelAdmin):
     form = BlogPostAdminForm
-    # Overview: the post id (legacy_id — the numeric /blog/<id> the site
-    # addresses posts with), the audience level (public/members/
-    # subscribers/private), and the is_published flag — the online vs.
-    # draft state (users can save drafts: private posts sit unpublished).
-    list_display = (
-        "title", "legacy_id", "slug", "author", "visibility",
-        "is_published", "view_count", "created_at",
-    )
+    # Overview: the historical eight columns. Every other DB column can be
+    # switched on per user through the column chooser in the changelist
+    # (see ALL_POST_COLUMNS / get_list_display).
+    list_display = DEFAULT_POST_COLUMNS
     list_filter = ("is_published", "visibility", "blog_category_integer")
     search_fields = ("title", "slug", "legacy_id")
     readonly_fields = (
@@ -283,6 +338,80 @@ class BlogPostAdmin(admin.ModelAdmin):
         # LEFT-join the author: this dev DB has posts whose author was deleted,
         # so a non-select_related lazy load would raise DoesNotExist mid-render.
         return super().get_queryset(request).select_related("author")
+
+    def get_changelist(self, request, **kwargs):
+        """The custom ChangeList that ignores the chooser's URL params
+        (ModelAdmin.get_changelist hardcodes the stock class in Django 5.2,
+        and the documented ``changelist_class`` attr is not consulted)."""
+        return PostChangelist
+
+    # ── Column chooser ──────────────────────────────────────────────────────
+
+    def get_list_display(self, request):
+        """The columns selected for this user (session-backed), mapped to
+        the names the changelist resolves. Falls back to the default
+        overview; ``title`` is always kept — it carries the row's link to
+        the change form, and a column-less row would be unactionable."""
+        selected = request.session.get(POST_COLUMNS_SESSION_KEY)
+        if not selected:
+            return self.list_display
+        valid = {key for key, _label in ALL_POST_COLUMNS}
+        kept = [key for key in selected if key in valid]
+        if "title" not in kept:
+            kept.insert(0, "title")
+        return tuple(POST_COLUMN_DISPLAY.get(key, key) for key in kept)
+
+    def changelist_view(self, request, extra_context=None):
+        if "columns_reset" in request.GET:
+            request.session[POST_COLUMNS_SESSION_KEY] = list(
+                DEFAULT_POST_COLUMNS
+            )
+        elif "columns" in request.GET:
+            keys = [k.strip() for k in request.GET["columns"].split(",")
+                    if k.strip()]
+            valid = {key for key, _label in ALL_POST_COLUMNS}
+            keys = [key for key in keys if key in valid]
+            if "title" not in keys:
+                keys.insert(0, "title")
+            request.session[POST_COLUMNS_SESSION_KEY] = keys
+        if extra_context is None:
+            extra_context = {}
+        extra_context["column_chooser"] = self._column_chooser_context(request)
+        return super().changelist_view(request, extra_context)
+
+    @staticmethod
+    def _column_chooser_context(request):
+        """[(key, label, checked, locked), …] for the chooser widget."""
+        selected = request.session.get(POST_COLUMNS_SESSION_KEY)
+        if not selected:
+            selected = list(DEFAULT_POST_COLUMNS)
+        return [
+            (key, label, key in selected, key == "title")
+            for key, label in ALL_POST_COLUMNS
+        ]
+
+    def _excerpt(self, value, limit=120):
+        """Plain-text preview of a longtext/JSON field for a table cell."""
+        text = re.sub(r"<[^>]+>", " ", value or "")
+        text = re.sub(r"\s+", " ", text).strip()
+        if len(text) > limit:
+            text = text[:limit] + "…"
+        return escape(text) or "—"
+
+    def summary_preview(self, obj):
+        return self._excerpt(obj.summary)
+
+    summary_preview.short_description = "Summary"
+
+    def content_preview(self, obj):
+        return self._excerpt(obj.content)
+
+    content_preview.short_description = "Content"
+
+    def tags_preview(self, obj):
+        return self._excerpt(", ".join(obj.tags or []))
+
+    tags_preview.short_description = "Tags"
 
     def save_model(self, request, obj, form, change):
         now = timezone.now()
