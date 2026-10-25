@@ -12,7 +12,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 
 from panel.admin import ALL_POST_COLUMNS, DEFAULT_POST_COLUMNS
-from panel.models import BlogPost, TWCUser
+from panel.models import BlogComment, BlogPost, TWCUser
 from panel.tests.base import MirrorTestCase, setUpModule  # noqa: F402
 
 
@@ -107,13 +107,32 @@ class ColumnChooserTest(ColumnChooserBase):
             self.assertIn(model_key, covered,
                           f"physical column {col!r} not selectable")
 
-    def test_default_view_keeps_the_historical_eight_columns(self):
+    def test_default_view_keeps_the_default_columns(self):
         self.make_post("col-b")
         resp = self.changelist()
         self.assertEqual(
             self.effective_columns(resp),
             list(DEFAULT_POST_COLUMNS),
         )
+
+    def test_comments_count_shows_approved_only(self):
+        """The Comments column counts APPROVED comments — the number the
+        public site shows (pending ones are not public yet)."""
+        post = self.make_post("col-comments")
+        for approved, text in ((True, "approved"), (False, "pending")):
+            BlogComment.objects.create(
+                id=uuid.uuid4(), post_id=post.id, author_id=self.author.id,
+                content=text, is_approved=approved,
+                created_at="2026-10-24 10:00:00",
+                updated_at="2026-10-24 10:00:00",
+            )
+        html = self.changelist().content.decode()
+        row = next(
+            (chunk for chunk in html.split("<tr") if "col-comments" in chunk),
+            None,
+        )
+        self.assertIsNotNone(row, "row for the probe post not found")
+        self.assertRegex(row, r">\s*1\s*</td>")
 
     def test_apply_param_shows_only_the_selected_columns(self):
         self.make_post("col-c")

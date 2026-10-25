@@ -19,6 +19,7 @@ import uuid
 
 from django import forms
 from django.contrib import admin
+from django.db.models import Count, Q
 from django.utils import timezone
 from django.utils.html import escape, format_html
 from django.utils.text import slugify
@@ -54,10 +55,12 @@ ROLE_CHOICES = [
 # ── Blog posts changelist: column chooser ───────────────────────────────────
 # Every physical column of ``blog_posts`` is selectable in the posts
 # overview: author_id through the ``author`` FK and the camelCase
-# ``BlogCategoryInteger`` through its snake_case model field. The default
-# keeps the historical eight-column overview; each user's selection lives
-# in the admin session (per browser) and can be shared via the
-# bookmarkable ``?columns=…`` query string.
+# ``BlogCategoryInteger`` through its snake_case model field.
+# ``comments_count`` is the one aggregated (non-physical) column: the
+# number of APPROVED comments — the count the public site shows.
+# The default keeps the historical overview plus the comment count; each
+# user's selection lives in the admin session (per browser) and can be
+# shared via the bookmarkable ``?columns=…`` query string.
 ALL_POST_COLUMNS = (
     ("legacy_id", "Post ID"),
     ("title", "Title"),
@@ -68,6 +71,7 @@ ALL_POST_COLUMNS = (
     ("visibility", "Visibility"),
     ("is_published", "Published"),
     ("view_count", "Views"),
+    ("comments_count", "Comments"),
     ("published_at", "Published at"),
     ("created_at", "Created"),
     ("updated_at", "Updated"),
@@ -80,7 +84,7 @@ ALL_POST_COLUMNS = (
 )
 DEFAULT_POST_COLUMNS = (
     "title", "legacy_id", "slug", "author", "visibility",
-    "is_published", "view_count", "created_at",
+    "is_published", "view_count", "comments_count", "created_at",
 )
 # Chooser keys that render through a preview method (the raw fields are
 # longtext/JSON — dumping them whole into a table cell would be unusable).
@@ -323,7 +327,20 @@ class BlogPostAdmin(ColumnChooserMixin, admin.ModelAdmin):
     def get_queryset(self, request):
         # LEFT-join the author: this dev DB has posts whose author was deleted,
         # so a non-select_related lazy load would raise DoesNotExist mid-render.
-        return super().get_queryset(request).select_related("author")
+        qs = super().get_queryset(request).select_related("author")
+        # Approved-comment count per post (what the public site shows).
+        return qs.annotate(
+            comments_count=Count(
+                "comments", filter=Q(comments__is_approved=True)
+            )
+        )
+
+    def comments_count(self, obj):
+        """Approved (public) comments on the post — see get_queryset."""
+        return obj.comments_count
+
+    comments_count.short_description = "Comments"
+    comments_count.admin_order_field = "comments_count"
 
     def _excerpt(self, value, limit=120):
         """Plain-text preview of a longtext/JSON field for a table cell."""
