@@ -42,6 +42,12 @@ class BlogPostAdminBase(MirrorTestCase):
             "published_at": "",
             "featured_image": "",
             "tags_text": "",
+            # The Comments inline (2026-10-25) makes every POST to the
+            # add/change form carry the inline formset's management form.
+            "comments-INITIAL_FORMS": "0",
+            "comments-TOTAL_FORMS": "0",
+            "comments-MIN_NUM_FORMS": "0",
+            "comments-MAX_NUM_FORMS": "1000",
         }
         data.update(overrides)
         return self.client.post(reverse("admin:panel_blogpost_add"), data)
@@ -170,6 +176,11 @@ class VisibilityOverviewTest(BlogPostAdminBase):
                 "author": str(self.author.id), "content": "{}",
                 "visibility": "subscribers", "is_published": "on",
                 "tags_text": "",
+                # Comments inline formset management (required since 2026-10-25)
+                "comments-INITIAL_FORMS": "0",
+                "comments-TOTAL_FORMS": "0",
+                "comments-MIN_NUM_FORMS": "0",
+                "comments-MAX_NUM_FORMS": "1000",
             },
         )
         self.assertEqual(resp.status_code, 302)

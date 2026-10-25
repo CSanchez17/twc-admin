@@ -187,6 +187,11 @@ class PostCategorySelectTest(MirrorTestCase):
             "title": "Cat Post", "slug": "", "author": str(self.author.id),
             "content": "{}", "published_at": "", "featured_image": "",
             "tags_text": "", "category": "5",
+            # Comments inline formset management (required since 2026-10-25)
+            "comments-INITIAL_FORMS": "0",
+            "comments-TOTAL_FORMS": "0",
+            "comments-MIN_NUM_FORMS": "0",
+            "comments-MAX_NUM_FORMS": "1000",
         }
         resp = self.client.post(reverse("admin:panel_blogpost_add"), data)
         self.assertEqual(resp.status_code, 302)
@@ -198,6 +203,11 @@ class PostCategorySelectTest(MirrorTestCase):
             "title": "No Cat", "slug": "", "author": str(self.author.id),
             "content": "{}", "published_at": "", "featured_image": "",
             "tags_text": "", "category": "",
+            # Comments inline formset management (required since 2026-10-25)
+            "comments-INITIAL_FORMS": "0",
+            "comments-TOTAL_FORMS": "0",
+            "comments-MIN_NUM_FORMS": "0",
+            "comments-MAX_NUM_FORMS": "1000",
         }
         resp = self.client.post(reverse("admin:panel_blogpost_add"), data)
         self.assertEqual(resp.status_code, 302)

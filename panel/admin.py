@@ -305,9 +305,27 @@ class BlogPostAdminForm(forms.ModelForm):
         return out
 
 
+class BlogCommentInline(admin.TabularInline):
+    """This post's comments — one join (comments.post_id = post.id) — so
+    the post page answers 'who commented what and how is it moderated':
+    approve / reject / delete right here, without leaving to the Comments
+    panel. ``created_at`` is readonly; the app's write path owns the rest
+    of the field semantics (the site re-sanitizes on read anyway)."""
+
+    model = BlogComment
+    fk_name = "post"
+    verbose_name = "Comment"
+    verbose_name_plural = "Comments"
+    fields = ("author", "content", "is_approved", "created_at")
+    readonly_fields = ("created_at",)
+    extra = 0
+    can_delete = True
+
+
 @admin.register(BlogPost)
 class BlogPostAdmin(ColumnChooserMixin, admin.ModelAdmin):
     form = BlogPostAdminForm
+    inlines = (BlogCommentInline,)
     # Overview: the historical eight columns. Every other DB column can be
     # switched on per user through the column chooser in the changelist
     # (curated labels in ALL_POST_COLUMNS).

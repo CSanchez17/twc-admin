@@ -23,6 +23,11 @@ posts, categorías, tags y el resto del esquema.
   local (127.0.0.1). Si algún día lo expones, cambia la contraseña, setea
   `DJANGO_SECRET_KEY` fuerte y sirve con HTTPS.
 
+### Testuusers
+
+sofia.codes, danielweber, emilybuilds, lucasdev, yuki.tanaka, marcus.thompson, isabella.conti, omarhaddad, anna.data, henrik.security
+- password común PersonaDemo1!
+
 ## Arranque rápido
 
 Prerrequisito: el stack Docker de `C:\Projects\twc` corriendo (el panel

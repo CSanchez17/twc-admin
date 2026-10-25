@@ -191,3 +191,64 @@ class ColumnChooserTest(ColumnChooserBase):
             html,
             r'value="title"\s+[^>]*disabled|value="title"\s+checked\s+[^>]*disabled',
         )
+
+
+class PostCommentsInlineTest(ColumnChooserBase):
+    """The post CHANGE FORM must show the post's comments — 'asi como
+    system': a 'Comments' section with who wrote what (author + content
+    + moderation state). One join: comments.post_id = post.id."""
+
+    def _change_form(self, post):
+        return self.client.get(
+            reverse("admin:panel_blogpost_change", args=[post.id])
+        )
+
+    def test_comments_section_lists_the_post_comments_with_author(self):
+        post = self.make_post("inline-post-a")
+        other = TWCUser.objects.create(
+            id=uuid.uuid4(), email="inline-b@x.com", username="inlineb",
+            password_hash="argon2id-smoke", given_name="B",
+            created_at="2026-10-24 10:00:00", updated_at="2026-10-24 10:00:00",
+        )
+        BlogComment.objects.create(
+            id=uuid.uuid4(), post_id=post.id, author_id=other.id,
+            content="muy util esta serie", is_approved=True,
+            created_at="2026-10-24 10:00:00", updated_at="2026-10-24 10:00:00",
+        )
+        resp = self._change_form(post)
+        self.assertEqual(resp.status_code, 200)
+        html = resp.content.decode()
+        self.assertIn("Comments", html, "the 'Comments' section header is missing")
+        self.assertIn("muy util esta serie", html)
+        self.assertIn("inlineb", html, "the comment author must be shown")
+
+    def test_only_this_posts_comments_are_shown(self):
+        post = self.make_post("inline-post-b")
+        stranger = self.make_post("inline-other-post")
+        BlogComment.objects.create(
+            id=uuid.uuid4(), post_id=stranger.id, author_id=self.author.id,
+            content="COMMENT-ONLY-ON-OTHER-POST", is_approved=True,
+            created_at="2026-10-24 10:00:00", updated_at="2026-10-24 10:00:00",
+        )
+        html = self._change_form(post).content.decode()
+        self.assertNotIn("COMMENT-ONLY-ON-OTHER-POST", html)
+
+    def test_moderation_state_is_editable_in_the_inline(self):
+        post = self.make_post("inline-post-c")
+        BlogComment.objects.create(
+            id=uuid.uuid4(), post_id=post.id, author_id=self.author.id,
+            content="pendiente de moderar", is_approved=False,
+            created_at="2026-10-24 10:00:00", updated_at="2026-10-24 10:00:00",
+        )
+        html = self._change_form(post).content.decode()
+        # an is_approved checkbox per comment row (moderate in place)
+        self.assertRegex(html, r'name="comments-\d+-is_approved"')
+
+    def test_post_without_comments_shows_the_empty_section(self):
+        post = self.make_post("inline-post-d")
+        html = self._change_form(post).content.decode()
+        self.assertIn("Comments", html)
+        # Django renders the empty-form placeholder row — and NO real
+        # comment rows (nothing like comments-0-*) for a comment-less post.
+        self.assertIn('id="comments-empty"', html)
+        self.assertNotIn('name="comments-0-content"', html)
