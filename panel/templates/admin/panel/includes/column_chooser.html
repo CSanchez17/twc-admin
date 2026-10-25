@@ -1,0 +1,26 @@
+{# Compact column-chooser dropdown — shared by every panel (2026-10-25). #}
+<div class="cc-wrap">
+  <button type="button" class="button cc-toggle" aria-expanded="false"
+          aria-controls="cc-panel" title="Elegir columnas visibles">
+    Columnas ({{ column_chooser.selected }}/{{ column_chooser.total }})
+    <span class="cc-caret" aria-hidden="true">▾</span>
+  </button>
+  <div class="cc-panel" role="menu">
+    <p class="cc-hint">
+      Se guardan en tu sesión; el enlace con «?columns=…» es compartible.
+    </p>
+    <div class="cc-grid">
+      {% for key, label, checked, locked in column_chooser.items %}
+      <label class="cc-item{% if locked %} cc-locked{% endif %}">
+        <input type="checkbox" value="{{ key }}"
+               {% if checked %}checked{% endif %}{% if locked %} disabled{% endif %}>
+        <span>{{ label }}{% if locked %} (fija){% endif %}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <div class="cc-buttons">
+      <button type="button" class="cc-apply button">Aplicar</button>
+      <button type="button" class="cc-reset button">Restablecer</button>
+    </div>
+  </div>
+</div>

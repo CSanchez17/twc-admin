@@ -1,0 +1,111 @@
+{% extends "admin/change_list.html" %}
+{% load i18n admin_list %}
+{#
+  #  Shared changelist base for every panel with a column chooser (2026-10-25):
+  #  one compact "Columnas" dropdown instead of a checkbox strip. Placement:
+  #  - panels whose changelist renders an actions row (stock delete_selected
+  #    counts — it is get_actions(request), not the actions attr, that
+  #    gates the row): inside that row, right of the "Acción … seleccionados"
+  #    controls (the .actions div is flattened with display:contents so its
+  #    children join the flex row);
+  #  - panels without any actions row (no delete permission, no custom
+  #    actions, OR zero results — with the stock show_full_result_count
+  #    Django hides the whole actions row when the table is empty):
+  #    in the object-tools bar.
+  #}
+{% block extrahead %}{{ block.super }}
+<style>
+  .cc-actions-wrap { display: flex; align-items: center; gap: 12px; }
+  .cc-actions-wrap > .actions { display: contents; }
+  .cc-wrap { position: relative; margin-left: auto; }
+  ul.object-tools .cc-tool { display: inline-block; margin-left: auto; }
+  ul.object-tools .cc-tool .cc-wrap { margin-left: 0; }
+  .cc-toggle { white-space: nowrap; cursor: pointer; }
+  .cc-toggle .cc-caret { display: inline-block; transition: transform .15s; }
+  .cc-toggle[aria-expanded="true"] .cc-caret { transform: rotate(180deg); }
+  .cc-panel {
+    display: none; position: absolute; top: calc(100% + 6px); right: 0; z-index: 20;
+    width: 400px; max-height: 360px; overflow: auto;
+    background: #fff; color: #333; border: 1px solid #ccc; border-radius: 8px;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, .18); padding: 12px 14px;
+  }
+  .cc-panel.cc-open { display: block; }
+  .cc-hint { margin: 0 0 10px; font-size: 11.5px; color: #666; }
+  .cc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 14px; }
+  .cc-item { display: flex; align-items: center; gap: 7px; font-size: 12.5px; cursor: pointer; }
+  .cc-item input { margin: 0; }
+  .cc-item.cc-locked { opacity: .6; }
+  .cc-buttons { margin-top: 12px; display: flex; gap: 8px; }
+</style>
+<script>
+// The <head> parses before the body, so the buttons don't exist yet at
+// script-execution time — bind on DOMContentLoaded (verified live 2026-10-25:
+// without it the "Columnas" button silently did nothing).
+document.addEventListener("DOMContentLoaded", function () {
+  "use strict";
+  function closeAll(except) {
+    document.querySelectorAll(".cc-panel.cc-open").forEach(function (p) {
+      if (p !== except) {
+        p.classList.remove("cc-open");
+        var b = p.parentElement.querySelector(".cc-toggle");
+        if (b) b.setAttribute("aria-expanded", "false");
+      }
+    });
+  }
+  document.querySelectorAll(".cc-toggle").forEach(function (btn) {
+    btn.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      var panel = btn.parentElement.querySelector(".cc-panel");
+      if (!panel) return;
+      var open = panel.classList.toggle("cc-open");
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      if (open) closeAll(panel);
+    });
+  });
+  document.addEventListener("click", function () { closeAll(null); });
+  document.querySelectorAll(".cc-panel").forEach(function (panel) {
+    panel.addEventListener("click", function (e) { e.stopPropagation(); });
+  });
+  document.querySelectorAll(".cc-apply").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var panel = btn.closest(".cc-panel");
+      var keys = Array.prototype.map.call(
+        panel.querySelectorAll('input[type="checkbox"]:checked:not(:disabled)'),
+        function (i) { return i.value; }
+      ).join(",");
+      var url = new URL(window.location.href);
+      url.searchParams.set("columns", keys);
+      window.location.href = url.toString();
+    });
+  });
+  document.querySelectorAll(".cc-reset").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var url = new URL(window.location.href);
+      url.searchParams.set("columns_reset", "1");
+      window.location.href = url.toString();
+    });
+  });
+});
+</script>
+{% endblock %}
+{% block object-tools-items %}
+  {% if column_chooser %}
+    {% if not action_form or not actions_on_top or not cl.show_admin_actions %}
+    <li class="cc-tool">{% include "admin/panel/includes/column_chooser.html" %}</li>
+    {% endif %}
+  {% endif %}
+  {{ block.super }}
+{% endblock %}
+{% block result_list %}
+  {% if column_chooser and action_form and actions_on_top and cl.show_admin_actions %}
+  <div class="cc-actions-wrap">
+    {% admin_actions %}
+    {% include "admin/panel/includes/column_chooser.html" %}
+  </div>
+  {% else %}
+    {% if action_form and actions_on_top and cl.show_admin_actions %}{% admin_actions %}{% endif %}
+  {% endif %}
+  {% result_list cl %}
+  {% if action_form and actions_on_bottom and cl.show_admin_actions %}{% admin_actions %}{% endif %}
+{% endblock %}

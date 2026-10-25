@@ -19,7 +19,6 @@ import uuid
 
 from django import forms
 from django.contrib import admin
-from django.contrib.admin.views.main import ChangeList
 from django.utils import timezone
 from django.utils.html import escape, format_html
 from django.utils.text import slugify
@@ -42,6 +41,7 @@ from .models import (
     TWCUser,
     X402Payment,
 )
+from .column_chooser import ColumnChooserMixin, ChooserChangeList
 from .security import hash_password
 
 ROLE_CHOICES = [
@@ -63,6 +63,7 @@ ALL_POST_COLUMNS = (
     ("title", "Title"),
     ("slug", "Slug"),
     ("author", "Author"),
+    ("author_id", "Author UUID"),
     ("author_legacy_id", "Author ID (legacy)"),
     ("visibility", "Visibility"),
     ("is_published", "Published"),
@@ -81,7 +82,6 @@ DEFAULT_POST_COLUMNS = (
     "title", "legacy_id", "slug", "author", "visibility",
     "is_published", "view_count", "created_at",
 )
-POST_COLUMNS_SESSION_KEY = "panel_blogpost_columns"
 # Chooser keys that render through a preview method (the raw fields are
 # longtext/JSON — dumping them whole into a table cell would be unusable).
 POST_COLUMN_DISPLAY = {
@@ -89,24 +89,6 @@ POST_COLUMN_DISPLAY = {
     "tags": "tags_preview",
     "content": "content_preview",
 }
-
-
-class PostChangelist(ChangeList):
-    """ChangeList that ignores the column-chooser query parameters.
-
-    Every unknown ``?param`` on the changelist URL is parsed as a model
-    lookup filter — and an unknown one raises
-    ``IncorrectLookupParameters`` (the infamous redirect to ``?e=1``).
-    The chooser's ``columns`` / ``columns_reset`` params are UI state,
-    not filters, so they are dropped before the lookup parsing."""
-
-    CHOOSER_PARAMS = ("columns", "columns_reset")
-
-    def get_filters_params(self, params=None):
-        params = super().get_filters_params(params)
-        for key in self.CHOOSER_PARAMS:
-            params.pop(key, None)
-        return params
 
 
 # ── Users ───────────────────────────────────────────────────────────────────
@@ -144,7 +126,7 @@ class TWCUserAdminForm(forms.ModelForm):
 
 
 @admin.register(TWCUser)
-class TWCUserAdmin(admin.ModelAdmin):
+class TWCUserAdmin(ColumnChooserMixin, admin.ModelAdmin):
     form = TWCUserAdminForm
     list_display = ("username", "email", "role", "is_active", "is_email_confirmed", "created_at")
     list_filter = ("role", "is_active", "is_email_confirmed")
@@ -194,7 +176,7 @@ class TWCUserAdmin(admin.ModelAdmin):
 
 
 @admin.register(AnalyticsEvent)
-class VisitAdmin(admin.ModelAdmin):
+class VisitAdmin(ColumnChooserMixin, admin.ModelAdmin):
     """Page views: who (user or session), when, where (ip/country), which page."""
 
     list_display = (
@@ -320,12 +302,16 @@ class BlogPostAdminForm(forms.ModelForm):
 
 
 @admin.register(BlogPost)
-class BlogPostAdmin(admin.ModelAdmin):
+class BlogPostAdmin(ColumnChooserMixin, admin.ModelAdmin):
     form = BlogPostAdminForm
     # Overview: the historical eight columns. Every other DB column can be
     # switched on per user through the column chooser in the changelist
-    # (see ALL_POST_COLUMNS / get_list_display).
+    # (curated labels in ALL_POST_COLUMNS).
     list_display = DEFAULT_POST_COLUMNS
+    chooser_columns = ALL_POST_COLUMNS
+    chooser_defaults = DEFAULT_POST_COLUMNS
+    chooser_display = POST_COLUMN_DISPLAY
+    chooser_locked = ("title",)
     list_filter = ("is_published", "visibility", "blog_category_integer")
     search_fields = ("title", "slug", "legacy_id")
     readonly_fields = (
@@ -338,57 +324,6 @@ class BlogPostAdmin(admin.ModelAdmin):
         # LEFT-join the author: this dev DB has posts whose author was deleted,
         # so a non-select_related lazy load would raise DoesNotExist mid-render.
         return super().get_queryset(request).select_related("author")
-
-    def get_changelist(self, request, **kwargs):
-        """The custom ChangeList that ignores the chooser's URL params
-        (ModelAdmin.get_changelist hardcodes the stock class in Django 5.2,
-        and the documented ``changelist_class`` attr is not consulted)."""
-        return PostChangelist
-
-    # ── Column chooser ──────────────────────────────────────────────────────
-
-    def get_list_display(self, request):
-        """The columns selected for this user (session-backed), mapped to
-        the names the changelist resolves. Falls back to the default
-        overview; ``title`` is always kept — it carries the row's link to
-        the change form, and a column-less row would be unactionable."""
-        selected = request.session.get(POST_COLUMNS_SESSION_KEY)
-        if not selected:
-            return self.list_display
-        valid = {key for key, _label in ALL_POST_COLUMNS}
-        kept = [key for key in selected if key in valid]
-        if "title" not in kept:
-            kept.insert(0, "title")
-        return tuple(POST_COLUMN_DISPLAY.get(key, key) for key in kept)
-
-    def changelist_view(self, request, extra_context=None):
-        if "columns_reset" in request.GET:
-            request.session[POST_COLUMNS_SESSION_KEY] = list(
-                DEFAULT_POST_COLUMNS
-            )
-        elif "columns" in request.GET:
-            keys = [k.strip() for k in request.GET["columns"].split(",")
-                    if k.strip()]
-            valid = {key for key, _label in ALL_POST_COLUMNS}
-            keys = [key for key in keys if key in valid]
-            if "title" not in keys:
-                keys.insert(0, "title")
-            request.session[POST_COLUMNS_SESSION_KEY] = keys
-        if extra_context is None:
-            extra_context = {}
-        extra_context["column_chooser"] = self._column_chooser_context(request)
-        return super().changelist_view(request, extra_context)
-
-    @staticmethod
-    def _column_chooser_context(request):
-        """[(key, label, checked, locked), …] for the chooser widget."""
-        selected = request.session.get(POST_COLUMNS_SESSION_KEY)
-        if not selected:
-            selected = list(DEFAULT_POST_COLUMNS)
-        return [
-            (key, label, key in selected, key == "title")
-            for key, label in ALL_POST_COLUMNS
-        ]
 
     def _excerpt(self, value, limit=120):
         """Plain-text preview of a longtext/JSON field for a table cell."""
@@ -464,7 +399,7 @@ class BlogPostAdmin(admin.ModelAdmin):
 
 
 @admin.register(BlogCategory)
-class BlogCategoryAdmin(admin.ModelAdmin):
+class BlogCategoryAdmin(ColumnChooserMixin, admin.ModelAdmin):
     """The blog_categories table (seeded by ``manage.py seed_categories``).
 
     The slug is generated from the name at creation and then frozen: it is
@@ -518,7 +453,7 @@ def _post_ref_cell(post_id, post=None):
 
 
 @admin.register(BlogComment)
-class BlogCommentAdmin(admin.ModelAdmin):
+class BlogCommentAdmin(ColumnChooserMixin, admin.ModelAdmin):
     list_display = ("created_at", "post_title", "author", "is_approved", "excerpt")
     list_filter = ("is_approved",)
     search_fields = ("content", "post__title", "author__username")
@@ -563,7 +498,7 @@ class BlogCommentAdmin(admin.ModelAdmin):
 
 
 @admin.register(Payment)
-class PaymentAdmin(admin.ModelAdmin):
+class PaymentAdmin(ColumnChooserMixin, admin.ModelAdmin):
     list_display = ("created_at", "user", "amount", "currency", "provider", "status")
     list_filter = ("provider", "status", "currency")
     search_fields = ("user__username", "user__email", "provider_ref")
@@ -576,7 +511,7 @@ class PaymentAdmin(admin.ModelAdmin):
 
 
 @admin.register(X402Payment)
-class X402PaymentAdmin(admin.ModelAdmin):
+class X402PaymentAdmin(ColumnChooserMixin, admin.ModelAdmin):
     list_display = ("created_at", "short_tx", "payer", "amount", "network", "endpoint")
     list_filter = ("network", "x402_version")
     search_fields = ("tx_hash", "payer", "endpoint")
@@ -604,7 +539,7 @@ def _stamp(obj, change: bool, with_updated: bool = False) -> None:
 
 
 @admin.register(MediaFile)
-class MediaFileAdmin(admin.ModelAdmin):
+class MediaFileAdmin(ColumnChooserMixin, admin.ModelAdmin):
     """Upload registry — the bytes live in the uploads volume, this is the
     DB record (name, mime, size, checksum, category)."""
 
@@ -639,7 +574,7 @@ class MediaFileAdmin(admin.ModelAdmin):
 
 
 @admin.register(Notification)
-class NotificationAdmin(admin.ModelAdmin):
+class NotificationAdmin(ColumnChooserMixin, admin.ModelAdmin):
     list_display = ("created_at", "user", "type", "title", "is_read", "expires_at")
     list_filter = ("type", "is_read")
     search_fields = ("title", "message", "user__username", "user__email")
@@ -664,7 +599,7 @@ class NotificationAdmin(admin.ModelAdmin):
 
 
 @admin.register(ContactMessage)
-class ContactMessageAdmin(admin.ModelAdmin):
+class ContactMessageAdmin(ColumnChooserMixin, admin.ModelAdmin):
     """Contact-form submissions — moderate: resolve / reopen / delete."""
 
     list_display = ("created_at", "name", "email", "subject", "is_resolved")
@@ -688,7 +623,7 @@ class ContactMessageAdmin(admin.ModelAdmin):
 
 
 @admin.register(ChatRoom)
-class ChatRoomAdmin(admin.ModelAdmin):
+class ChatRoomAdmin(ColumnChooserMixin, admin.ModelAdmin):
     """Durable chat rooms. The daily job clears non-default rooms; deleting
     one here just removes the record (messages are ephemeral)."""
 
@@ -726,7 +661,7 @@ class _ReadOnlyMixin:
 
 
 @admin.register(BlogReaction)
-class BlogReactionAdmin(_ReadOnlyMixin, admin.ModelAdmin):
+class BlogReactionAdmin(_ReadOnlyMixin, ColumnChooserMixin, admin.ModelAdmin):
     list_display = ("created_at", "post_title", "user", "reaction_type")
     list_filter = ("reaction_type",)
     search_fields = ("post__title", "user__username")
@@ -744,7 +679,7 @@ class BlogReactionAdmin(_ReadOnlyMixin, admin.ModelAdmin):
 
 
 @admin.register(ContactEmailSend)
-class ContactEmailSendAdmin(_ReadOnlyMixin, admin.ModelAdmin):
+class ContactEmailSendAdmin(_ReadOnlyMixin, ColumnChooserMixin, admin.ModelAdmin):
     """Rate-limit ledger (1 contact email per IP per 30 days) — append-only
     by design, so the admin is view-only."""
 
@@ -758,7 +693,7 @@ class ContactEmailSendAdmin(_ReadOnlyMixin, admin.ModelAdmin):
 
 
 @admin.register(SchancoinWallet)
-class SchancoinWalletAdmin(_ReadOnlyMixin, admin.ModelAdmin):
+class SchancoinWalletAdmin(_ReadOnlyMixin, ColumnChooserMixin, admin.ModelAdmin):
     """Wallet/key metadata — balances are derived by the coin service and
     must never be edited from the panel."""
 
@@ -771,7 +706,7 @@ class SchancoinWalletAdmin(_ReadOnlyMixin, admin.ModelAdmin):
 
 
 @admin.register(SchancoinBlock)
-class SchancoinBlockAdmin(_ReadOnlyMixin, admin.ModelAdmin):
+class SchancoinBlockAdmin(_ReadOnlyMixin, ColumnChooserMixin, admin.ModelAdmin):
     list_display = ("index", "short_hash", "previous_hash", "nonce", "difficulty",
                     "timestamp", "is_valid")
     list_filter = ("is_valid",)
@@ -787,7 +722,7 @@ class SchancoinBlockAdmin(_ReadOnlyMixin, admin.ModelAdmin):
 
 
 @admin.register(SchancoinTransaction)
-class SchancoinTransactionAdmin(_ReadOnlyMixin, admin.ModelAdmin):
+class SchancoinTransactionAdmin(_ReadOnlyMixin, ColumnChooserMixin, admin.ModelAdmin):
     list_display = ("created_at", "short_tx", "sender", "receiver", "amount",
                     "status", "is_coinbase")
     list_filter = ("status", "is_coinbase")

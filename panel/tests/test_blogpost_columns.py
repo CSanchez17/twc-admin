@@ -81,7 +81,7 @@ class ColumnChooserTest(ColumnChooserBase):
         self.make_post("col-a")
         resp = self.changelist()
         self.assertEqual(resp.status_code, 200)
-        self.assertContains(resp, 'id="post-column-chooser"')
+        self.assertContains(resp, 'class="cc-wrap"')
         # Every column key must appear as a checkbox value.
         html = resp.content.decode()
         for key, _label in ALL_POST_COLUMNS:
