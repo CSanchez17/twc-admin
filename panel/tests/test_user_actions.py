@@ -62,9 +62,12 @@ class DeleteSelectedActionTest(MirrorTestCase):
         self.assertContains(response, "delete_selected")
 
     def test_delete_selected_removes_the_checked_users(self):
-        kept = _make_user("probe-kept")
-        gone1 = _make_user("probe-gone-1")
-        gone2 = _make_user("probe-gone-2")
+        # Unique suffix per run: the shared test DB may hold committed
+        # probe-* rows from an earlier (failed) run.
+        suffix = uuid.uuid4().hex[:8]
+        kept = _make_user(f"probe-{suffix}-kept")
+        gone1 = _make_user(f"probe-{suffix}-gone1")
+        gone2 = _make_user(f"probe-{suffix}-gone2")
         TWCUser.objects.bulk_create([kept, gone1, gone2])
 
         url = reverse("admin:panel_twcuser_changelist")
@@ -84,7 +87,7 @@ class DeleteSelectedActionTest(MirrorTestCase):
         # The shared test DB may hold committed seed rows from the app's
         # suite — assert on the probes, not on an absolute count.
         remaining = list(
-            TWCUser.objects.filter(username__startswith="probe-")
+            TWCUser.objects.filter(username__startswith=f"probe-{suffix}-")
             .values_list("id", flat=True)
         )
         self.assertEqual(remaining, [kept.id])

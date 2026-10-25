@@ -95,10 +95,16 @@ class AdminRegistrationTest(MirrorTestCase):
                 )
             )
         self.client.force_login(user_model.objects.get(username="boss"))
-        resp = self.client.get(reverse("admin:panel_twcuser_changelist"))
-        self.assertEqual(resp.status_code, 200)
-        self.assertContains(resp, "alice@example.com")
-        self.assertContains(resp, "bob@example.com")
+        # The shared test DB holds committed rows from the app's suite,
+        # so search for each user instead of reading page 1 of the
+        # changelist (default 100 rows, newest first).
+        for n in ("alice", "bob"):
+            resp = self.client.get(
+                reverse("admin:panel_twcuser_changelist"),
+                {"q": f"{n}@example.com"},
+            )
+            self.assertEqual(resp.status_code, 200)
+            self.assertContains(resp, f"{n}@example.com")
 
 
 class DocumentedUrlsTest(MirrorTestCase):
