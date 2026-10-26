@@ -164,7 +164,11 @@ SECRET_KEY = os.environ.get(
 
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 
-ALLOWED_HOSTS = ["*"]  # dev tool; put a real host list in production
+# Comma-separated host list override (deploy docs: EASY_PANEL_DEPLOY.md).
+# The ["*"] fallback is a dev convenience — a deployed panel should pin its
+# real domains (behind Easypanel's proxy ["*"] works, explicit is safer).
+_ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "").strip()
+ALLOWED_HOSTS = [h.strip() for h in _ALLOWED_HOSTS.split(",") if h.strip()] or ["*"]
 
 INSTALLED_APPS = [
     "django.contrib.admin",

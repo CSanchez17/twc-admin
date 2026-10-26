@@ -1,0 +1,139 @@
+# Deploying the twc admin panel on Easypanel
+
+The panel (`C:/Projects/twc-admin`, GitHub `CSanchez17/twc-admin`) is a
+**single-service** Django app: gunicorn behind Easypanel's proxy, editing
+the **same live MySQL** the FastAPI app writes to (all content models are
+`managed=False` mirrors), with a tiny local SQLite that holds ONLY the
+panel's own superusers/sessions/permissions (`admin_auth` alias).
+
+There is no compose in prod. Everything below is the sequence the local
+stack already proves (`docker-compose.yml` in this repo is the dev twin of
+this deployment).
+
+## 0. Final architecture
+
+| Piece | Where | Notes |
+|---|---|---|
+| Panel (Django, gunicorn) | Easypanel project **`twc_prod`**, service `admin` | built from the repo-root `Dockerfile`, listens on **8000** |
+| MySQL | the app project's **existing** `mysql` service | the panel reuses it — same project ⇒ same docker network ⇒ the internal hostname `mysql` resolves natively |
+| Panel auth (SQLite) | named volume of service `admin` | mounted at `/data` — holds the `twcadmin` superuser, sessions, permissions |
+| Source | GitHub `CSanchez17/twc-admin`, branch `master` | `autoDeploy: false` — deploys are manual |
+
+Put the panel **inside the existing `twc_prod` project** (not a new
+project): Easypanel services only see each other's internal hostnames when
+they share a project network. A separate project would need a manual
+network join for the same result.
+
+## 1. Add the service
+
+1. In project `twc_prod`: **Add service → Git**.
+   - Repository: `CSanchez17/twc-admin`, branch `master`.
+2. Service settings:
+   - **Dockerfile**: the one at the repo root (multi-stage; the last stage
+     is the runtime — Gunicorn worker pool). No `--target` needed.
+   - **Port**: `8000`.
+   - **autoDeploy: false**.
+3. **Domain**: a domain for this service pointing at container port
+   **8000** (never 80). E.g. `panel.thewhitecode.com`.
+4. **Volume**: add a volume to the service, mounted at **`/data`**.
+   Without it a rebuild recreates the container with an empty
+   `admin_auth` database and the superuser account is gone.
+
+## 2. Environment variables (service `admin` → Environment)
+
+| Var | Value |
+|---|---|
+| `DATABASE_URL` | **exactly the same value the app service uses** (`mysql://user:***@<internal-host>:<port>/twc_prod?charset=utf8mb4` — copy from the MySQL **Credentials** tab). The `+aiomysql`/driver suffix is fine: the panel parses the `mysql` scheme prefix and drives the connection with PyMySQL. |
+| `TWC_PANEL_IN_DOCKER` | `1` — **required**. Tells settings.py to skip the host-side rewrite that turns `mysql:3306` into `127.0.0.1:8801` (a rewrite that only makes sense for a panel running on the dev host; inside the container it points at the panel itself ⇒ every content page 500s). |
+| `ADMIN_AUTH_DB` | `/data/admin_auth.sqlite3` — where the panel-local auth SQLite lives (inside the mounted volume). |
+| `DJANGO_SECRET_KEY` | random ≥ 32 chars (separate from the app's `SECRET_KEY`). Rotating it later invalidates panel sessions — fine at first deploy. |
+| `DJANGO_DEBUG` | `0` — **required**: the code default is `1`. |
+| `DJANGO_ALLOWED_HOSTS` | the panel's real domains, comma-separated, e.g. `panel.thewhitecode.com`. Omit to fall back to `["*"]` (works behind Easypanel's proxy). |
+| `DJANGO_TZ` | optional, default `Europe/Madrid`. |
+
+**Never set** `TWC_SEED_DUMP`, `TWC_REPAIR_USERS` or any uploads vars —
+those are app-service concerns. The panel never seeds, repairs or
+uploads; it only reads/edits the live tables.
+
+## 3. First deploy
+
+1. Deploy the service from the panel. On boot the entrypoint runs:
+   - `migrate --database admin_auth` (panel-local tables only — it NEVER
+     migrates the shared MySQL, whose schema the FastAPI app owns), then
+   - `collectstatic` (WhiteNoise serves `/static/` — gunicorn would 404
+     it otherwise), then starts gunicorn on 8000.
+2. Check the logs: no traceback, gunicorn booted with 2 workers.
+   The Dockerfile ships a healthcheck probing `GET /login/` — Easypanel
+   can use the same path for its probe.
+
+## 4. Create the superuser (once, per database volume)
+
+```bash
+docker ps --format '{{.ID}} {{.Names}}' | grep -i admin
+docker exec -it <container-id> python manage.py createsuperuser
+# username: twcadmin   (the router puts the account in admin_auth, not in
+# the shared MySQL — the live DB's users table is never touched)
+```
+
+Verify over HTTPS:
+
+```bash
+curl -sk -o /dev/null -w "%{http_code}\n" https://<panel-domain>/login/   # 200
+```
+
+Log in at the domain. The panel's URL prefix is `/panel/` (app label);
+the login page itself lives at the domain root.
+
+## 5. Production verification
+
+- [ ] `GET /login/` → 200, fully styled (WhiteNoise statics load)
+- [ ] login with `twcadmin` works
+- [ ] content changelist (blog posts) lists the **live** rows — same
+      numbers as `GET <app-domain>/blog/load/content`
+- [ ] editing a post's title in the panel → shows on the live site
+      immediately (this is the point: it IS the live database)
+- [ ] `GET /health/...` style probes: the panel has no `/health` route —
+      use `/login/`
+- [ ] logs: no `OperationalError` (would mean a wrong DATABASE_URL or a
+      missing `TWC_PANEL_IN_DOCKER`), no `disallowed host` (wrong
+      `DJANGO_ALLOWED_HOSTS`)
+
+## 6. Day-2 operations
+
+- **Ship a change**: `git push` to `master`, then **Re-deploy** the admin
+  service (autoDeploy off). Env vars and the `/data` volume survive; the
+  superuser is kept.
+- **MySQL credentials rotated** on the app side → update the panel's
+  `DATABASE_URL` too and re-deploy.
+- **Fresh volume** (project rebuilt): re-run step 4. The shared MySQL is
+  untouched by any of this.
+- **The panel edits LIVE content** — every save/delete in it is the
+  production site. There is no staging copy.
+
+## 7. Gotchas (learned the hard way, do not rediscover them)
+
+1. **`DJANGO_DEBUG` defaults to `1`** — a deployed panel must set `0`,
+   else error pages leak stack traces to visitors.
+2. **`TWC_PANEL_IN_DOCKER=1` is load-bearing.** Without it, settings
+   rewrite the DB host `mysql` → `127.0.0.1:8801` (the dev-host mapping);
+   inside the container that is the panel itself ⇒ login works (panel-
+   local auth) but every content page 500s. Symptom: "the panel opens but
+   shows nothing".
+3. **The `/data` volume is the superuser.** No volume ⇒ rebuild ⇒ empty
+   `admin_auth` ⇒ the panel is locked (no account) and you have to
+   exec into the container to recreate it.
+4. **Never run `migrate` without `--database admin_auth`.** The
+   `default` alias is the shared live MySQL with `managed=False`
+   mirrors — a bare `migrate` would try to create Django's internal
+   tables (auth, sessions, contenttypes) INSIDE the production database.
+   The entrypoint already does this right.
+5. **Port 8000 for the domain** — the proxy routes to the container
+   port; `80` is not listening.
+6. **`DJANGO_SECRET_KEY` must not stay the dev default** (it is a
+   hardcoded insecure string in settings for dev convenience).
+7. **Password hashes interoperate**: the panel hashes with Argon2id —
+   the same algorithm as the FastAPI app. An account created in the panel
+   can log into the site, and vice versa, when usernames match.
+8. **Easypanel DNS from the dev machine is flaky** (this host loses
+   `github.com`/`api.github.com` resolution intermittently): pushes and
+   API calls need a retry loop, not a single attempt.
