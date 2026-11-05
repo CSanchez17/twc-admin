@@ -14,4 +14,20 @@ python manage.py migrate --noinput --database admin_auth
 # statics, and the admin catch-all would 404 them).
 python manage.py collectstatic --noinput --clear
 
+# First-boot superuser from the environment. A deployed container has no
+# shell, so `manage.py createsuperuser` cannot be typed later; the env vars
+# (DJANGO_SUPERUSER_USERNAME / _PASSWORD / _EMAIL) make the account
+# reproducible and rebuild-safe. --noinput reads the password from
+# DJANGO_SUPERUSER_PASSWORD. An existing account is left untouched.
+if [ -n "$DJANGO_SUPERUSER_USERNAME" ] && [ -n "$DJANGO_SUPERUSER_PASSWORD" ]; then
+    if python manage.py createsuperuser --noinput \
+        --username "$DJANGO_SUPERUSER_USERNAME" \
+        --email "${DJANGO_SUPERUSER_EMAIL:-admin@localhost}" \
+        --database admin_auth 2>/dev/null; then
+        echo "superuser '$DJANGO_SUPERUSER_USERNAME' created"
+    else
+        echo "superuser '$DJANGO_SUPERUSER_USERNAME' already present (or creation failed) — continuing"
+    fi
+fi
+
 exec "$@" 
