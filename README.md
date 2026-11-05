@@ -5,6 +5,23 @@ sobre la base de datos compartida de TheWhiteCode. El sistema de registro es
 la app FastAPI (`C:\Projects\twc`); este panel la administra: usuarios,
 posts, categorías, tags y el resto del esquema.
 
+## Producción
+
+| | |
+|---|---|
+| URL | https://twc-prod-admin.58nbit.easypanel.host/login/ |
+| Dominio propio | `admin.thewhitecode.com` (pendiente del registro DNS) |
+| Proyecto / servicio Easypanel | `twc_prod` / `admin` |
+| Rama desplegada | `main` |
+
+Configuración real, variables de entorno, DNS, fallos encontrados y su causa
+raíz: [`PROD-RUNBOOK.md`](PROD-RUNBOOK.md). Verificación rápida tras cada
+deploy:
+
+```bash
+python scripts/verify_deploy.py --base https://twc-prod-admin.58nbit.easypanel.host
+```
+
 ## Credenciales (desarrollo local)
 
 | Campo | Valor |

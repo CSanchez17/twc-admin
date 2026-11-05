@@ -1,5 +1,9 @@
 # Deploying the twc admin panel on Easypanel
 
+> The **as-deployed** state (variables, DNS, failure modes, verification)
+> lives in [`PROD-RUNBOOK.md`](PROD-RUNBOOK.md). This file stays the
+> first-time step-by-step guide.
+
 The panel (`C:/Projects/twc-admin`, GitHub `CSanchez17/twc-admin`) is a
 **single-service** Django app: gunicorn behind Easypanel's proxy, editing
 the **same live MySQL** the FastAPI app writes to (all content models are
