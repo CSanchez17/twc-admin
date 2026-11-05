@@ -16,8 +16,8 @@ this deployment).
 |---|---|---|
 | Panel (Django, gunicorn) | Easypanel project **`twc_prod`**, service `admin` | built from the repo-root `Dockerfile`, listens on **8000** |
 | MySQL | the app project's **existing** `mysql` service | the panel reuses it — same project ⇒ same docker network ⇒ the internal hostname `mysql` resolves natively |
-| Panel auth (SQLite) | named volume of service `admin` | mounted at `/data` — holds the `twcadmin` superuser, sessions, permissions |
-| Source | GitHub `CSanchez17/twc-admin`, branch `master` | `autoDeploy: false` — deploys are manual |
+| Panel auth (SQLite) | named volume of service `admin` | mounted at `/data` — holds the superuser, sessions, permissions |
+| Source | GitHub `CSanchez17/twc-admin`, branch **`main`** | `autoDeploy: false` — deploys are manual |
 
 Put the panel **inside the existing `twc_prod` project** (not a new
 project): Easypanel services only see each other's internal hostnames when
@@ -27,7 +27,7 @@ network join for the same result.
 ## 1. Add the service
 
 1. In project `twc_prod`: **Add service → Git**.
-   - Repository: `CSanchez17/twc-admin`, branch `master`.
+   - Repository: `CSanchez17/twc-admin`, branch **`main`** (the default branch).
 2. Service settings:
    - **Dockerfile**: the one at the repo root (multi-stage; the last stage
      is the runtime — Gunicorn worker pool). No `--target` needed.
@@ -47,6 +47,9 @@ network join for the same result.
 | `TWC_PANEL_IN_DOCKER` | `1` — **required**. Tells settings.py to skip the host-side rewrite that turns `mysql:3306` into `127.0.0.1:8801` (a rewrite that only makes sense for a panel running on the dev host; inside the container it points at the panel itself ⇒ every content page 500s). |
 | `ADMIN_AUTH_DB` | `/data/admin_auth.sqlite3` — where the panel-local auth SQLite lives (inside the mounted volume). |
 | `DJANGO_SECRET_KEY` | random ≥ 32 chars (separate from the app's `SECRET_KEY`). Rotating it later invalidates panel sessions — fine at first deploy. |
+| `DJANGO_SUPERUSER_USERNAME` | the panel login to create on first boot, e.g. `twcadmin` |
+| `DJANGO_SUPERUSER_PASSWORD` | its password (≥ 8 chars). Read by `createsuperuser --noinput`; the entrypoint never echoes it. |
+| `DJANGO_SUPERUSER_EMAIL` | optional, defaults to `admin@localhost` |
 | `DJANGO_DEBUG` | `0` — **required**: the code default is `1`. |
 | `DJANGO_ALLOWED_HOSTS` | the panel's real domains, comma-separated, e.g. `panel.thewhitecode.com`. Omit to fall back to `["*"]` (works behind Easypanel's proxy). |
 | `DJANGO_TZ` | optional, default `Europe/Madrid`. |
@@ -66,23 +69,31 @@ uploads; it only reads/edits the live tables.
    The Dockerfile ships a healthcheck probing `GET /login/` — Easypanel
    can use the same path for its probe.
 
-## 4. Create the superuser (once, per database volume)
+## 4. Create the superuser (automated — no shell needed)
+
+A deployed container has no shell, so the account is created from
+environment variables on first boot. The entrypoint runs, right before
+gunicorn:
+
+```sh
+python manage.py createsuperuser --noinput --username "$DJANGO_SUPERUSER_USERNAME" \
+    --email "${DJANGO_SUPERUSER_EMAIL:-admin@localhost}" --database admin_auth
+```
+
+`--noinput` takes the password from `DJANGO_SUPERUSER_PASSWORD`. The step is
+idempotent: an existing account is left untouched, so rebuilds never reset the
+password and a fresh `/data` volume re-creates the account.
+
+Check the deploy logs for `superuser 'twcadmin' created`.
+
+Fallback (only if the env vars were omitted): exec into the container —
 
 ```bash
 docker ps --format '{{.ID}} {{.Names}}' | grep -i admin
-docker exec -it <container-id> python manage.py createsuperuser
-# username: twcadmin   (the router puts the account in admin_auth, not in
-# the shared MySQL — the live DB's users table is never touched)
+docker exec -it <container-id> python manage.py createsuperuser --database admin_auth
 ```
 
-Verify over HTTPS:
-
-```bash
-curl -sk -o /dev/null -w "%{http_code}\n" https://<panel-domain>/login/   # 200
-```
-
-Log in at the domain. The panel's URL prefix is `/panel/` (app label);
-the login page itself lives at the domain root.
+The router puts the account in `admin_auth`, never in the shared MySQL.
 
 ## 5. Production verification
 
