@@ -167,8 +167,64 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 # Comma-separated host list override (deploy docs: EASY_PANEL_DEPLOY.md).
 # The ["*"] fallback is a dev convenience — a deployed panel should pin its
 # real domains (behind Easypanel's proxy ["*"] works, explicit is safer).
-_ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "").strip()
-ALLOWED_HOSTS = [h.strip() for h in _ALLOWED_HOSTS.split(",") if h.strip()] or ["*"]
+def _allowed_hosts(raw: str) -> list:
+    """Parse DJANGO_ALLOWED_HOSTS and always allow the loopback names.
+
+    The image's HEALTHCHECK probes http://127.0.0.1:8000/login/ from inside
+    the container, so loopback must stay allowed even when the operator pins
+    real domains: otherwise Django answers 400 (DisallowedHost), the
+    container is marked unhealthy and the platform stops it — the symptom is
+    a 502 from the proxy about 70 s after every boot.
+    """
+    hosts = [h.strip() for h in (raw or "").split(",") if h.strip()] or ["*"]
+    if "*" not in hosts:
+        for loopback in ("127.0.0.1", "localhost", "[::1]"):
+            if loopback not in hosts:
+                hosts.append(loopback)
+    return hosts
+
+
+ALLOWED_HOSTS = _allowed_hosts(os.environ.get("DJANGO_ALLOWED_HOSTS", ""))
+
+# ── TLS-terminating reverse proxy (Easypanel, nginx, Caddy…) ───────────────
+# The proxy terminates HTTPS and forwards the original scheme in
+# X-Forwarded-Proto. Without this Django treats every request as plain HTTP:
+# request.is_secure() is False, an admin login POST from https://<domain>
+# fails the CSRF origin check ("Origin checking failed — does not match any
+# trusted origins") and secure cookies are never set.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+
+def _csrf_trusted_origins(raw: str, hosts: list) -> list:
+    """Origins allowed to POST — Django's CSRF origin check.
+
+    An explicit ``DJANGO_CSRF_TRUSTED_ORIGINS`` list wins; otherwise derive
+    ``https://<host>`` from ALLOWED_HOSTS, skipping the wildcard and the
+    loopback names (a browser never sends those as Origin).
+    """
+    if (raw or "").strip():
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+    loopback = {"*", "127.0.0.1", "localhost", "[::1]"}
+    return [f"https://{host}" for host in hosts if host not in loopback]
+
+
+CSRF_TRUSTED_ORIGINS = _csrf_trusted_origins(
+    os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", ""), ALLOWED_HOSTS
+)
+
+def _secure_cookies(raw: str, debug: bool) -> bool:
+    """Secure cookies: explicit env wins, else on whenever DEBUG is off.
+
+    ``DJANGO_SECURE_COOKIES=0`` is the escape hatch for serving the panel over
+    plain HTTP (a Secure cookie is never sent over http, so login would loop).
+    """
+    value = raw.strip() if (raw or "").strip() else ("0" if debug else "1")
+    return value == "1"
+
+
+_SECURE_COOKIES = _secure_cookies(os.environ.get("DJANGO_SECURE_COOKIES", ""), DEBUG)
+SESSION_COOKIE_SECURE = _SECURE_COOKIES
+CSRF_COOKIE_SECURE = _SECURE_COOKIES
 
 INSTALLED_APPS = [
     "django.contrib.admin",
